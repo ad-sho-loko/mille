@@ -18,6 +18,10 @@ const (
 	ControlN  = 14
 	ControlP  = 16
 	BackSpace = 127
+	ArrowUp = 1000
+	ArrowDown = 1001
+	ArrowRight = 1002
+	ArrowLeft = 1003
 )
 
 type Editor struct {
@@ -88,7 +92,7 @@ func (e *Editor) writeRow(r *Row) {
 
 	e.flushRow(e.crow)
 	e.moveCursor(e.crow, 0)
-	syscall.Write(0, buf)
+	e.write(buf)
 }
 
 // Models
@@ -141,7 +145,7 @@ func (e *Editor) setRowCol(row int, col int) {
 	e.moveCursor(e.crow, e.ccol)
 }
 
-func (e *Editor) setChar(row, col int, r rune) {
+func (e *Editor) appendChar(row int, r rune) {
 	e.rows[row].runes = append(e.rows[row].runes, r)
 	e.write([]byte(string(r)))
 }
@@ -160,6 +164,27 @@ func (e *Editor) enter() {
 	e.setRowCol(e.crow+1, 0)
 }
 
+func (e *Editor) parseKey(b []byte) (rune, int){
+	// try parsing escape sequence
+	if len(b) == 3 {
+		if b[0] == byte(27) && b[1] == '[' {
+			switch b[2] {
+			case 'A':
+				return ArrowUp, 3
+			case 'B':
+				return ArrowDown, 3
+			case 'C':
+				return ArrowRight, 3
+			case 'D':
+				return ArrowLeft, 3
+			}
+		}
+	}
+
+	// utf8
+	return utf8.DecodeRune(b)
+}
+
 func (e *Editor) readKeys() {
 	buf := make([]byte, 64)
 
@@ -167,10 +192,12 @@ func (e *Editor) readKeys() {
 		if n, err := syscall.Read(0, buf); err == nil {
 			b := buf[:n]
 			for {
-				r, n := utf8.DecodeRune(b)
+				r, n := e.parseKey(b)
+
 				if n == 0 {
 					break
 				}
+
 				e.keyChan <- r
 				b = b[n:]
 			}
@@ -183,30 +210,30 @@ func (e *Editor) interpretKey() {
 		r := <-e.keyChan
 
 		switch r {
-		case ControlB:
+		case ControlB, ArrowLeft:
 			e.setRowCol(e.crow, e.ccol-1)
 
 		case ControlC:
 			e.restoreTerminal()
 			return
 
-		case ControlF:
+		case ControlF, ArrowRight:
 			e.setRowCol(e.crow, e.ccol+1)
 
 		case ControlH, BackSpace:
 			e.backspace()
 
-		case ControlN:
+		case ControlN, ArrowDown:
 			e.setRowCol(e.crow+1, e.ccol)
 
 		case Enter:
 			e.enter()
 
-		case ControlP:
+		case ControlP, ArrowUp:
 			e.setRowCol(e.crow-1, e.ccol)
 
 		default:
-			e.setChar(e.crow, e.ccol, r)
+			e.appendChar(e.crow, r)
 			e.setCol(e.ccol + 1)
 		}
 	}
