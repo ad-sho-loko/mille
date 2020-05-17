@@ -26,13 +26,14 @@ type Editor struct {
 	keyChan  chan rune
 	crow     int
 	ccol     int
-	buffer   []*Row
+	rows     []*Row
 	width    int
 	height   int
 }
 
 type Row struct {
-	chars []rune
+	n int
+	runes []rune
 }
 
 // Terminal
@@ -65,8 +66,12 @@ func (e *Editor) flush() {
 	e.write([]byte("\033[2J"))
 }
 
+func (e *Editor) flushRow(row int){
+	e.write([]byte("\033[2K"))
+}
+
 func (e *Editor) moveCursor(row, col int) {
-	s := fmt.Sprintf("\033[%d;%dH", row, col)
+	s := fmt.Sprintf("\033[%d;%dH", row+1, col+1) // 0-origin to 1-origin
 	e.write([]byte(s))
 }
 
@@ -74,14 +79,43 @@ func (e *Editor) write(b []byte) {
 	syscall.Write(0, b)
 }
 
+func (e *Editor) writeRow(r *Row) {
+	var buf []byte
+
+	for _, s := range r.runes {
+		buf = append(buf, []byte(string(s))...)
+	}
+
+	e.flushRow(e.crow)
+	e.moveCursor(e.crow, 0)
+	syscall.Write(0, buf)
+}
+
 // Models
+func (e *Editor) deleteAt(row *Row, col int) {
+	if col >= len(row.runes) {
+		return
+	}
+
+	var newRune []rune
+
+	for i, r := range row.runes {
+		if i != col {
+			newRune = append(newRune, r)
+		}
+	}
+
+	row.runes = newRune
+	e.writeRow(row)
+}
+
 func (e *Editor) setRow(row int) {
-	if row < 1 {
-		row = 1
+	if row < 0 {
+		row = 0
 	}
 
 	if row >= e.height {
-		row = e.height
+		row = e.height - 1
 	}
 
 	e.crow = row
@@ -89,12 +123,12 @@ func (e *Editor) setRow(row int) {
 }
 
 func (e *Editor) setCol(col int) {
-	if col < 1 {
-		col = 1
+	if col < 0 {
+		col = 0
 	}
 
 	if col >= e.width {
-		col = e.width
+		col = e.width - 1
 	}
 
 	e.ccol = col
@@ -108,12 +142,14 @@ func (e *Editor) setRowCol(row int, col int) {
 }
 
 func (e *Editor) setChar(row, col int, r rune) {
-	e.buffer[row].chars[col] = r
+	e.rows[row].runes = append(e.rows[row].runes, r)
 	e.write([]byte(string(r)))
 }
 
 func (e *Editor) backspace() {
-	if e.ccol > 1 {
+	if e.ccol > 0 {
+		row := e.rows[e.crow]
+		e.deleteAt(row, e.ccol-1)
 		e.setRowCol(e.crow, e.ccol-1)
 	} else {
 		e.setRowCol(e.crow-1, e.ccol)
@@ -181,14 +217,15 @@ func run(fileName string) {
 	rows := make([]*Row, 16)
 	for i := range rows {
 		rows[i] = &Row{
-			chars: make([]rune, 256),
+			n: i + 1,
+			runes: []rune{},
 		}
 	}
 
 	e := &Editor{
-		crow:     1,
-		ccol:     1,
-		buffer:   rows,
+		crow:     0,
+		ccol:     0,
+		rows:     rows,
 		fileName: fileName,
 		keyChan:  make(chan rune),
 	}
