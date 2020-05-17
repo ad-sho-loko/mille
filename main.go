@@ -26,13 +26,13 @@ type Editor struct {
 	keyChan  chan rune
 	crow     int
 	ccol     int
-	rows     []*Row
+	buffer   []*Row
 	width    int
 	height   int
 }
 
 type Row struct {
-	chars []string
+	chars []rune
 }
 
 // Terminal
@@ -107,6 +107,11 @@ func (e *Editor) setRowCol(row int, col int) {
 	e.moveCursor(e.crow, e.ccol)
 }
 
+func (e *Editor) setChar(row, col int, r rune) {
+	e.buffer[row].chars[col] = r
+	e.write([]byte(string(r)))
+}
+
 func (e *Editor) backspace() {
 	if e.ccol > 1 {
 		e.setRowCol(e.crow, e.ccol-1)
@@ -165,17 +170,25 @@ func (e *Editor) interpretKey() {
 			e.setRowCol(e.crow-1, e.ccol)
 
 		default:
-			fmt.Print(string(r))
+			e.setChar(e.crow, e.ccol, r)
 			e.setCol(e.ccol + 1)
 		}
 	}
 }
 
 func run(fileName string) {
+	// TODO: バッファの初期化
+	rows := make([]*Row, 16)
+	for i := range rows {
+		rows[i] = &Row{
+			chars: make([]rune, 256),
+		}
+	}
+
 	e := &Editor{
 		crow:     1,
 		ccol:     1,
-		rows:     []*Row{},
+		buffer:   rows,
 		fileName: fileName,
 		keyChan:  make(chan rune),
 	}
