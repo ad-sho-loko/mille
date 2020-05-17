@@ -27,6 +27,12 @@ const (
 	ArrowLeft  = 1003
 )
 
+// Color Definition
+const (
+	black = 40
+	cyan = 46
+)
+
 type Editor struct {
 	fileName string
 	rawState *terminal.State
@@ -43,6 +49,10 @@ type Row struct {
 	runes []rune
 }
 
+type StatusBar struct {
+	fileName string
+}
+
 // Terminal
 func (e *Editor) initTerminal() {
 	state, err := terminal.MakeRaw(0)
@@ -56,15 +66,49 @@ func (e *Editor) initTerminal() {
 	}
 
 	e.width = width
-	e.height = height
+	e.height = height - 2 	// for status/help bar
 	e.rawState = state
 	e.flush()
+	e.writeHelpMenu()
+	e.writeStatusBar()
 	e.moveCursor(e.crow, e.ccol)
 }
 
 func (e *Editor) restoreTerminal() {
 	if err := terminal.Restore(0, e.rawState); err != nil {
 		panic("Cannot restore from raw mode.")
+	}
+}
+
+func (e *Editor) writeHelpMenu() {
+	e.setBgColor(cyan)
+	defer e.setBgColor(black)
+
+	message := "HELP: Ctrl+S = Save / Cntl+C = Quit"
+	for i, ch := range message {
+		e.moveCursor(e.height+1, i)
+		e.write([]byte(string(ch)))
+	}
+
+	for i := len(message); i < e.width; i++ {
+		e.moveCursor(e.height+1, i)
+		e.write([]byte{ ' ' })
+	}
+}
+
+func (e *Editor) writeStatusBar() {
+	e.setBgColor(cyan)
+	defer e.setBgColor(black)
+
+	// Write file name
+	for i, ch := range e.fileName {
+		e.moveCursor(e.height, i)
+		e.write([]byte(string(ch)))
+	}
+
+	for i := len(e.fileName); i < e.width; i++ {
+		e.moveCursor(e.height, i)
+		e.write([]byte{ ' ' })
 	}
 }
 
@@ -75,6 +119,11 @@ func (e *Editor) flush() {
 
 func (e *Editor) flushRow() {
 	e.write([]byte("\033[2K"))
+}
+
+func (e *Editor) setBgColor(color int) {
+	s := fmt.Sprintf("\033[%dm", color)
+	e.write([]byte(s))
 }
 
 func (e *Editor) moveCursor(row, col int) {
