@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/sys/unix"
 	"io/ioutil"
 	"strings"
 	"syscall"
@@ -35,7 +35,7 @@ const (
 
 type Editor struct {
 	fileName string
-	rawState *terminal.State
+	rawState *unix.Termios
 	keyChan  chan rune
 	crow     int
 	ccol     int
@@ -49,21 +49,44 @@ type Row struct {
 	runes []rune
 }
 
-type StatusBar struct {
-	fileName string
+// Terminal
+func (e *Editor) makeRaw(fd int) *unix.Termios {
+	termios, err := unix.IoctlGetTermios(fd, unix.TIOCGETA)
+	if err != nil {
+		panic(err)
+	}
+
+	termios.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP | unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON
+	termios.Oflag &^= unix.OPOST
+	termios.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
+	termios.Cflag &^= unix.CSIZE | unix.PARENB
+	termios.Cflag |= unix.CS8
+	termios.Cc[unix.VMIN] = 1
+	termios.Cc[unix.VTIME] = 0
+	if err := unix.IoctlSetTermios(fd, unix.TIOCSETA, termios); err != nil {
+		panic(err)
+	}
+
+	return termios
 }
 
-// Terminal
-func (e *Editor) initTerminal() {
-	state, err := terminal.MakeRaw(0)
-	if err != nil {
+func (e *Editor) restoreTerminal(fd int) {
+	if err := unix.IoctlSetTermios(fd, unix.TIOCSETA, e.rawState); err != nil {
 		panic(err)
 	}
+}
 
-	width, height, err := terminal.GetSize(0)
+func (e *Editor) getWindowSize(fd int) (int, int) {
+	ws, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
 	if err != nil {
 		panic(err)
 	}
+	return int(ws.Col), int(ws.Row)
+}
+
+func (e *Editor) initTerminal() {
+	state := e.makeRaw(0)
+	width, height := e.getWindowSize(0)
 
 	e.width = width
 	e.height = height - 2 	// for status/help bar
@@ -74,16 +97,7 @@ func (e *Editor) initTerminal() {
 	e.moveCursor(e.crow, e.ccol)
 }
 
-func (e *Editor) restoreTerminal() {
-	if err := terminal.Restore(0, e.rawState); err != nil {
-		panic("Cannot restore from raw mode.")
-	}
-}
-
 func (e *Editor) writeHelpMenu() {
-	e.setBgColor(cyan)
-	defer e.setBgColor(black)
-
 	message := "HELP: Ctrl+S = Save / Cntl+C = Quit"
 	for i, ch := range message {
 		e.moveCursor(e.height+1, i)
@@ -113,6 +127,22 @@ func (e *Editor) writeStatusBar() {
 }
 
 // Views
+func (e *Editor) write(b []byte) {
+	syscall.Write(0, b)
+}
+
+func (e *Editor) writeRow(r *Row) {
+	var buf []byte
+
+	for _, s := range r.runes {
+		buf = append(buf, []byte(string(s))...)
+	}
+
+	e.flushRow()
+	e.moveCursor(e.crow, 0)
+	e.write(buf)
+}
+
 func (e *Editor) flush() {
 	e.write([]byte("\033[2J"))
 }
@@ -129,22 +159,6 @@ func (e *Editor) setBgColor(color int) {
 func (e *Editor) moveCursor(row, col int) {
 	s := fmt.Sprintf("\033[%d;%dH", row+1, col+1) // 0-origin to 1-origin
 	e.write([]byte(s))
-}
-
-func (e *Editor) write(b []byte) {
-	syscall.Write(0, b)
-}
-
-func (e *Editor) writeRow(r *Row) {
-	var buf []byte
-
-	for _, s := range r.runes {
-		buf = append(buf, []byte(string(s))...)
-	}
-
-	e.flushRow()
-	e.moveCursor(e.crow, 0)
-	e.write(buf)
 }
 
 // Models
@@ -264,7 +278,7 @@ func (e *Editor) parseKey(b []byte) (rune, int) {
 		}
 	}
 
-	// utf8
+	// Parse bytes as UTF-8.
 	return utf8.DecodeRune(b)
 }
 
@@ -297,7 +311,7 @@ func (e *Editor) interpretKey() {
 			e.setRowCol(e.crow, e.ccol-1)
 
 		case ControlC:
-			e.restoreTerminal()
+			e.restoreTerminal(0)
 			return
 
 		case ControlF, ArrowRight:
