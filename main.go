@@ -30,27 +30,31 @@ const (
 // Color Definition
 const (
 	black = 40
-	cyan = 46
+	cyan  = 46
 )
 
 type Editor struct {
-	fileName string
-	rawState *unix.Termios
+	filePath string
 	keyChan  chan rune
 	crow     int
 	ccol     int
 	rows     []*Row
-	width    int
-	height   int
+	terminal *Terminal
+}
+
+type Terminal struct {
+	termios *unix.Termios
+	width   int
+	height  int
 }
 
 type Row struct {
 	numberOfRunes int
-	runes []rune
+	runes         []rune
 }
 
 // Terminal
-func (e *Editor) makeRaw(fd int) *unix.Termios {
+func makeRaw(fd int) *unix.Termios {
 	termios, err := unix.IoctlGetTermios(fd, unix.TIOCGETA)
 	if err != nil {
 		panic(err)
@@ -71,12 +75,12 @@ func (e *Editor) makeRaw(fd int) *unix.Termios {
 }
 
 func (e *Editor) restoreTerminal(fd int) {
-	if err := unix.IoctlSetTermios(fd, unix.TIOCSETA, e.rawState); err != nil {
+	if err := unix.IoctlSetTermios(fd, unix.TIOCSETA, e.terminal.termios); err != nil {
 		panic(err)
 	}
 }
 
-func (e *Editor) getWindowSize(fd int) (int, int) {
+func getWindowSize(fd int) (int, int) {
 	ws, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
 	if err != nil {
 		panic(err)
@@ -85,12 +89,6 @@ func (e *Editor) getWindowSize(fd int) (int, int) {
 }
 
 func (e *Editor) initTerminal() {
-	state := e.makeRaw(0)
-	width, height := e.getWindowSize(0)
-
-	e.width = width
-	e.height = height - 2 	// for status/help bar
-	e.rawState = state
 	e.flush()
 	e.writeHelpMenu()
 	e.writeStatusBar()
@@ -100,13 +98,13 @@ func (e *Editor) initTerminal() {
 func (e *Editor) writeHelpMenu() {
 	message := "HELP: Ctrl+S = Save / Cntl+C = Quit"
 	for i, ch := range message {
-		e.moveCursor(e.height+1, i)
+		e.moveCursor(e.terminal.height+1, i)
 		e.write([]byte(string(ch)))
 	}
 
-	for i := len(message); i < e.width; i++ {
-		e.moveCursor(e.height+1, i)
-		e.write([]byte{ ' ' })
+	for i := len(message); i < e.terminal.width; i++ {
+		e.moveCursor(e.terminal.height+1, i)
+		e.write([]byte{' '})
 	}
 }
 
@@ -115,14 +113,14 @@ func (e *Editor) writeStatusBar() {
 	defer e.setBgColor(black)
 
 	// Write file name
-	for i, ch := range e.fileName {
-		e.moveCursor(e.height, i)
+	for i, ch := range e.filePath {
+		e.moveCursor(e.terminal.height, i)
 		e.write([]byte(string(ch)))
 	}
 
-	for i := len(e.fileName); i < e.width; i++ {
-		e.moveCursor(e.height, i)
-		e.write([]byte{ ' ' })
+	for i := len(e.filePath); i < e.terminal.width; i++ {
+		e.moveCursor(e.terminal.height, i)
+		e.write([]byte{' '})
 	}
 }
 
@@ -186,8 +184,8 @@ func (e *Editor) setRow(row int) {
 		row = 0
 	}
 
-	if row >= e.height {
-		row = e.height - 1
+	if row >= e.terminal.height {
+		row = e.terminal.height - 1
 	}
 
 	e.crow = row
@@ -199,8 +197,8 @@ func (e *Editor) setCol(col int) {
 		col = 0
 	}
 
-	if col >= e.width {
-		col = e.width - 1
+	if col >= e.terminal.width {
+		col = e.terminal.width - 1
 	}
 
 	e.ccol = col
@@ -251,7 +249,9 @@ func (e *Editor) saveFile() {
 	for _, r := range e.rows {
 		if r.numberOfRunes >= 1 {
 			for _, ch := range r.runes {
-				if ch == rune(byte(0)) { continue }
+				if ch == rune(byte(0)) {
+					continue
+				}
 				sb.WriteRune(ch)
 			}
 			sb.WriteByte('\n')
@@ -259,6 +259,10 @@ func (e *Editor) saveFile() {
 	}
 
 	ioutil.WriteFile("tmp", []byte(sb.String()), 0644)
+}
+
+func (e *Editor) exit() {
+	e.restoreTerminal(0)
 }
 
 func (e *Editor) parseKey(b []byte) (rune, int) {
@@ -311,7 +315,7 @@ func (e *Editor) interpretKey() {
 			e.setRowCol(e.crow, e.ccol-1)
 
 		case ControlC:
-			e.restoreTerminal(0)
+			e.exit()
 			return
 
 		case ControlF, ArrowRight:
@@ -343,23 +347,45 @@ func makeRows() []*Row {
 	rows := make([]*Row, 16)
 	for i := range rows {
 		rows[i] = &Row{
-			numberOfRunes:0,
-			runes: make([]rune, 128),
+			numberOfRunes: 0,
+			runes:         make([]rune, 128),
 		}
 	}
 	return rows
 }
 
-func run(fileName string) {
+func newTerminal(fd int) *Terminal {
+	termios := makeRaw(fd)
+	width, height := getWindowSize(fd)
+
+	terminal := &Terminal{
+		termios: termios,
+		width:   width,
+		height:  height - 2, // for status|help bar
+
+	}
+
+	return terminal
+}
+
+func newEditor(filePath string) *Editor {
 	rows := makeRows()
+	terminal := newTerminal(0)
+
 	e := &Editor{
 		crow:     0,
 		ccol:     0,
 		rows:     rows,
-		fileName: fileName,
+		filePath: filePath,
 		keyChan:  make(chan rune),
+		terminal: terminal,
 	}
 
+	return e
+}
+
+func run(filePath string) {
+	e := newEditor(filePath)
 	e.initTerminal()
 	go e.readKeys()
 	e.interpretKey()
