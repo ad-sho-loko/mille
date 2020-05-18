@@ -29,8 +29,8 @@ const (
 
 // Color Definition
 const (
-	black = 40
-	cyan  = 46
+	Black = 40
+	Cyan  = 46
 )
 
 type Editor struct {
@@ -109,8 +109,8 @@ func (e *Editor) writeHelpMenu() {
 }
 
 func (e *Editor) writeStatusBar() {
-	e.setBgColor(cyan)
-	defer e.setBgColor(black)
+	e.setBgColor(Cyan)
+	defer e.setBgColor(Black)
 
 	// Write file name
 	for i, ch := range e.filePath {
@@ -175,6 +175,26 @@ func (e *Editor) deleteAt(row *Row, col int) {
 
 	row.numberOfRunes -= 1
 	row.runes = newRune
+
+	e.writeRow(row)
+}
+
+func (e *Editor) insertAt(row *Row, col int, newRune rune) {
+	if col >= len(row.runes) {
+		return
+	}
+
+	var newRunes []rune
+
+	for i, r := range row.runes {
+		if i == col {
+			newRunes = append(newRunes, newRune)
+		}
+		newRunes = append(newRunes, r)
+	}
+
+	row.numberOfRunes += 1
+	row.runes = newRunes
 
 	e.writeRow(row)
 }
@@ -337,7 +357,7 @@ func (e *Editor) interpretKey() {
 			e.setRowCol(e.crow-1, e.ccol)
 
 		default:
-			e.appendChar(e.crow, r)
+			e.insertAt(e.rows[e.crow], e.ccol, r)
 			e.setCol(e.ccol + 1)
 		}
 	}
