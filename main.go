@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf8"
 )
 
@@ -33,13 +34,20 @@ const (
 	Cyan  = 46
 )
 
+type messageType int
+const (
+	resetMessage messageType = iota + 1
+)
+
 type Editor struct {
 	filePath string
 	keyChan  chan rune
+	timeChan chan messageType
 	crow     int
 	ccol     int
 	rows     []*Row
 	terminal *Terminal
+	n int  // numberOfRows
 }
 
 type Terminal struct {
@@ -49,8 +57,14 @@ type Terminal struct {
 }
 
 type Row struct {
-	numberOfRunes int
-	runes         []rune
+	n     int     // numberOfRunes
+	runes []rune
+}
+
+func _assert(b bool, message string) {
+	if !b {
+		panic(message)
+	}
 }
 
 // Terminal
@@ -90,13 +104,14 @@ func getWindowSize(fd int) (int, int) {
 
 func (e *Editor) initTerminal() {
 	e.flush()
-	e.writeHelpMenu()
+	e.writeHelpMenu("HELP: Ctrl+S = Save / Cntl+C = Quit")
 	e.writeStatusBar()
 	e.moveCursor(e.crow, e.ccol)
 }
 
-func (e *Editor) writeHelpMenu() {
-	message := "HELP: Ctrl+S = Save / Cntl+C = Quit"
+func (e *Editor) writeHelpMenu(message string) {
+	prevRow, prevCol := e.crow, e.ccol
+
 	for i, ch := range message {
 		e.moveCursor(e.terminal.height+1, i)
 		e.write([]byte(string(ch)))
@@ -106,6 +121,8 @@ func (e *Editor) writeHelpMenu() {
 		e.moveCursor(e.terminal.height+1, i)
 		e.write([]byte{' '})
 	}
+
+	e.moveCursor(prevRow, prevCol)
 }
 
 func (e *Editor) writeStatusBar() {
@@ -159,47 +176,55 @@ func (e *Editor) moveCursor(row, col int) {
 	e.write([]byte(s))
 }
 
+func (e *Editor) updateRowRunes(row *Row) {
+	e.writeRow(row)
+}
+
 // Models
-func (e *Editor) deleteAt(row *Row, col int) {
-	if col >= len(row.runes) {
+func (r *Row) deleteAt(col int) {
+	if col >= r.n {
 		return
 	}
 
-	var newRune []rune
+	// https://github.com/golang/go/wiki/SliceTricks
+	r.runes = append(r.runes[:col], r.runes[col+1:]...)
+	r.n -= 1
+}
 
-	for i, r := range row.runes {
-		if i != col {
-			newRune = append(newRune, r)
-		}
+func (e *Editor) deleteRune(row *Row, col int) {
+	row.deleteAt(col)
+	e.updateRowRunes(row)
+
+	if e.ccol == 0 {
+		e.setRowCol(e.crow - 1, e.numberOfRunesInRow() - 1)
+	} else {
+		e.setRowCol(e.crow, e.ccol - 1)
+	}
+}
+
+func (r *Row) insertAt(colPos int, newRune rune) {
+
+	if colPos > r.n {
+		colPos = r.n
 	}
 
-	row.numberOfRunes -= 1
+	// https://github.com/golang/go/wiki/SliceTricks
+	r.runes = append(r.runes[:colPos], append([]rune{newRune}, r.runes[colPos:]...)...)
+	r.n += 1
+}
+
+func (e *Editor) insertRune(row *Row, col int, newRune rune) {
+	row.insertAt(col, newRune)
+	e.updateRowRunes(row)
+}
+
+func (e *Editor) replaceRune(row *Row, newRune []rune) {
+	row.n = len(newRune)
 	row.runes = newRune
-
-	e.writeRow(row)
+	e.updateRowRunes(row)
 }
 
-func (e *Editor) insertAt(row *Row, col int, newRune rune) {
-	if col >= len(row.runes) {
-		return
-	}
-
-	var newRunes []rune
-
-	for i, r := range row.runes {
-		if i == col {
-			newRunes = append(newRunes, newRune)
-		}
-		newRunes = append(newRunes, r)
-	}
-
-	row.numberOfRunes += 1
-	row.runes = newRunes
-
-	e.writeRow(row)
-}
-
-func (e *Editor) setRow(row int) {
+func (e *Editor) setRowPos(row int) {
 	if row < 0 {
 		row = 0
 	}
@@ -212,7 +237,7 @@ func (e *Editor) setRow(row int) {
 	e.moveCursor(e.crow, e.ccol)
 }
 
-func (e *Editor) setCol(col int) {
+func (e *Editor) setColPos(col int) {
 	if col < 0 {
 		col = 0
 	}
@@ -226,55 +251,54 @@ func (e *Editor) setCol(col int) {
 }
 
 func (e *Editor) setRowCol(row int, col int) {
-	e.setRow(row)
-	e.setCol(col)
+	e.setRowPos(row)
+	e.setColPos(col)
 	e.moveCursor(e.crow, e.ccol)
 }
 
-func (e *Editor) numberOfRunesInRow() int { return e.rows[e.crow].numberOfRunes }
-
-func (e *Editor) appendChar(row int, r rune) {
-	e.rows[row].numberOfRunes += 1
-	e.rows[row].runes[e.ccol] = r
-	e.write([]byte(string(r)))
-}
+func (e *Editor) numberOfRunesInRow() int { return e.rows[e.crow].n }
 
 func (e *Editor) backspace() {
-	if e.ccol > 0 {
-		row := e.rows[e.crow]
-		e.deleteAt(row, e.ccol-1)
-		e.setRowCol(e.crow, e.ccol-1)
-	} else {
-		e.setRow(e.crow - 1)
-		e.setCol(e.numberOfRunesInRow() - 1)
-	}
+	row := e.rows[e.crow]
+	e.deleteRune(row, e.ccol-1)
 }
 
 func (e *Editor) next() {
-	if e.ccol >= e.rows[e.crow].numberOfRunes {
+	if e.ccol >= e.rows[e.crow].n {
 		e.setRowCol(e.crow+1, 0)
 	} else {
 		e.setRowCol(e.crow, e.ccol+1)
 	}
 }
 
-func (e *Editor) enter() {
-	e.appendChar(e.crow, '\n')
+func (e *Editor) newLine() {
+	// TODO: Fix the bug of newLine
+
+	// Update the current row.
+	currentRow := e.rows[e.crow]
+	currentRowNewRunes := currentRow.runes[:e.ccol]
+	currentRowNewRunes = append(currentRowNewRunes, 'n')
+	e.replaceRune(currentRow, currentRowNewRunes)
 	e.setRowCol(e.crow+1, 0)
+
+	// Update the next row.
+	nextRow := e.rows[e.crow]
+	nextPrefixRunes := currentRow.runes[e.ccol:len(currentRowNewRunes)-1]
+	newNextRowRunes := append(nextPrefixRunes, nextRow.runes...)
+	e.replaceRune(nextRow, newNextRowRunes)
 }
 
 func (e *Editor) saveFile() {
 	sb := strings.Builder{}
 
 	for _, r := range e.rows {
-		if r.numberOfRunes >= 1 {
+		if r.n >= 1 {
 			for _, ch := range r.runes {
 				if ch == rune(byte(0)) {
 					continue
 				}
 				sb.WriteRune(ch)
 			}
-			sb.WriteByte('\n')
 		}
 	}
 
@@ -348,30 +372,32 @@ func (e *Editor) interpretKey() {
 			e.setRowCol(e.crow+1, e.ccol)
 
 		case Enter:
-			e.enter()
+			e.newLine()
 
 		case ControlS:
 			e.saveFile()
+			e.writeHelpMenu("Saved!")
+			e.timeChan <- resetMessage
 
 		case ControlP, ArrowUp:
 			e.setRowCol(e.crow-1, e.ccol)
 
 		default:
-			e.insertAt(e.rows[e.crow], e.ccol, r)
-			e.setCol(e.ccol + 1)
+			e.insertRune(e.rows[e.crow], e.ccol, r)
+			e.setColPos(e.ccol + 1)
 		}
 	}
 }
 
-func makeRows() []*Row {
-	rows := make([]*Row, 16)
-	for i := range rows {
-		rows[i] = &Row{
-			numberOfRunes: 0,
-			runes:         make([]rune, 128),
+func (e *Editor) timerEventPoller(){
+	for {
+		switch <- e.timeChan {
+		case resetMessage:
+			t := time.NewTimer(2 * time.Second)
+			<-t.C
+			e.writeHelpMenu("")
 		}
 	}
-	return rows
 }
 
 func newTerminal(fd int) *Terminal {
@@ -381,15 +407,25 @@ func newTerminal(fd int) *Terminal {
 	terminal := &Terminal{
 		termios: termios,
 		width:   width,
-		height:  height - 2, // for status|help bar
-
+		height:  height - 2, // for status|message bar
 	}
 
 	return terminal
 }
 
+func makeRow() []*Row {
+	var rows = make([]*Row, 16)
+	for i := range rows {
+		rows[i] = &Row {
+			n:0,
+			runes:[]rune{},
+		}
+	}
+	return rows
+}
+
 func newEditor(filePath string) *Editor {
-	rows := makeRows()
+	rows := makeRow()
 	terminal := newTerminal(0)
 
 	e := &Editor{
@@ -398,7 +434,9 @@ func newEditor(filePath string) *Editor {
 		rows:     rows,
 		filePath: filePath,
 		keyChan:  make(chan rune),
+		timeChan: make(chan messageType),
 		terminal: terminal,
+		n: 0,
 	}
 
 	return e
@@ -408,6 +446,7 @@ func run(filePath string) {
 	e := newEditor(filePath)
 	e.initTerminal()
 	go e.readKeys()
+	go e.timerEventPoller()
 	e.interpretKey()
 }
 
