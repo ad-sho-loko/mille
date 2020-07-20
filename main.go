@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"golang.org/x/sys/unix"
 	"io/ioutil"
+	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -61,10 +62,8 @@ type Row struct {
 	runes []rune
 }
 
-func _assert(b bool, message string) {
-	if !b {
-		panic(message)
-	}
+func err(a ...interface{}) {
+	_, _ = fmt.Fprintln(os.Stderr, a)
 }
 
 // Terminal
@@ -191,6 +190,16 @@ func (r *Row) deleteAt(col int) {
 	r.n -= 1
 }
 
+func (r *Row) insertAt(colPos int, newRune rune) {
+	if colPos > r.n {
+		colPos = r.n
+	}
+
+	// https://github.com/golang/go/wiki/SliceTricks
+	r.runes = append(r.runes[:colPos], append([]rune{newRune}, r.runes[colPos:]...)...)
+	r.n += 1
+}
+
 func (e *Editor) deleteRune(row *Row, col int) {
 	row.deleteAt(col)
 	e.updateRowRunes(row)
@@ -202,26 +211,19 @@ func (e *Editor) deleteRune(row *Row, col int) {
 	}
 }
 
-func (r *Row) insertAt(colPos int, newRune rune) {
-
-	if colPos > r.n {
-		colPos = r.n
-	}
-
-	// https://github.com/golang/go/wiki/SliceTricks
-	r.runes = append(r.runes[:colPos], append([]rune{newRune}, r.runes[colPos:]...)...)
-	r.n += 1
-}
-
 func (e *Editor) insertRune(row *Row, col int, newRune rune) {
 	row.insertAt(col, newRune)
 	e.updateRowRunes(row)
 }
 
-func (e *Editor) replaceRune(row *Row, newRune []rune) {
-	row.n = len(newRune)
-	row.runes = newRune
-	e.updateRowRunes(row)
+func (e *Editor) replaceRow(newRune []rune) {
+	r := &Row{
+		n: len(newRune),
+		runes: newRune,
+	}
+
+	e.rows[e.crow] = r
+	e.updateRowRunes(r)
 }
 
 func (e *Editor) setRowPos(row int) {
@@ -272,20 +274,19 @@ func (e *Editor) next() {
 }
 
 func (e *Editor) newLine() {
-	// TODO: Fix the bug of newLine
-
 	// Update the current row.
 	currentRow := e.rows[e.crow]
 	currentRowNewRunes := currentRow.runes[:e.ccol]
-	currentRowNewRunes = append(currentRowNewRunes, 'n')
-	e.replaceRune(currentRow, currentRowNewRunes)
+	nextRowNewPrefixRunes := append([]rune{}, currentRow.runes[e.ccol:len(currentRow.runes)]...)
+	currentRowNewRunes = append(currentRowNewRunes, '\n')
+	e.replaceRow(currentRowNewRunes)
 	e.setRowCol(e.crow+1, 0)
 
 	// Update the next row.
 	nextRow := e.rows[e.crow]
-	nextPrefixRunes := currentRow.runes[e.ccol:len(currentRowNewRunes)-1]
-	newNextRowRunes := append(nextPrefixRunes, nextRow.runes...)
-	e.replaceRune(nextRow, newNextRowRunes)
+	nextRowRunes := append(nextRowNewPrefixRunes, nextRow.runes...)
+	e.replaceRow(nextRowRunes)
+	e.setRowCol(e.crow, 0)
 }
 
 func (e *Editor) saveFile() {
@@ -310,7 +311,7 @@ func (e *Editor) exit() {
 }
 
 func (e *Editor) parseKey(b []byte) (rune, int) {
-	// try parsing escape sequence
+	// Try parsing escape sequence
 	if len(b) == 3 {
 		if b[0] == byte(27) && b[1] == '[' {
 			switch b[2] {
@@ -326,7 +327,7 @@ func (e *Editor) parseKey(b []byte) (rune, int) {
 		}
 	}
 
-	// Parse bytes as UTF-8.
+	// parse bytes as UTF-8.
 	return utf8.DecodeRune(b)
 }
 
@@ -407,7 +408,7 @@ func newTerminal(fd int) *Terminal {
 	terminal := &Terminal{
 		termios: termios,
 		width:   width,
-		height:  height - 2, // for status|message bar
+		height:  height - 2, // for status, message bar
 	}
 
 	return terminal
