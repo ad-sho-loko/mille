@@ -13,6 +13,7 @@ import (
 
 // Key Definitions
 const (
+	Dummy      = -1
 	ControlB   = 2
 	ControlC   = 3
 	ControlF   = 6
@@ -57,12 +58,11 @@ type Terminal struct {
 }
 
 type Row struct {
-	n     int     // numberOfRunes
-	runes []rune
+	chars *GapTable
 }
 
 /*
-func err(a ...interface{}) {
+func debug(a ...interface{}) {
 	_, _ = fmt.Fprintln(os.Stderr, a)
 }
 */
@@ -104,7 +104,7 @@ func getWindowSize(fd int) (int, int) {
 
 func (e *Editor) initTerminal() {
 	e.flush()
-	e.writeHelpMenu("HELP: Ctrl+S = Save / Cntl+C = Quit")
+	e.writeHelpMenu("HELP: Ctrl+S = Save / Ctrl+C = Quit")
 	e.writeStatusBar()
 	e.moveCursor(e.crow, e.ccol)
 }
@@ -150,7 +150,7 @@ func (e *Editor) write(b []byte) {
 func (e *Editor) writeRow(r *Row) {
 	var buf []byte
 
-	for _, s := range r.runes {
+	for _, s := range r.chars.Runes() {
 		buf = append(buf, []byte(string(s))...)
 	}
 
@@ -183,29 +183,28 @@ func (e *Editor) updateRowRunes(row *Row) {
 
 // Models
 func (r *Row) deleteAt(col int) {
-	if col >= r.n {
+	if col >= r.len() {
 		return
 	}
 
-	// https://github.com/golang/go/wiki/SliceTricks
-	r.runes = append(r.runes[:col], r.runes[col+1:]...)
-	r.n -= 1
+	r.chars.DeleteAt(col)
 }
 
 func (r *Row) insertAt(colPos int, newRune rune) {
-	if colPos > r.n {
-		colPos = r.n
+	if colPos > r.len() {
+		colPos = r.len()
 	}
 
-	// https://github.com/golang/go/wiki/SliceTricks
-	r.runes = append(r.runes[:colPos], append([]rune{newRune}, r.runes[colPos:]...)...)
-	r.n += 1
+	r.chars.InsertAt(colPos, newRune)
 }
+
+func (r *Row) len() int { return r.chars.Len() }
 
 func (e *Editor) deleteRune(row *Row, col int) {
 	if e.ccol == 0 {
 		if e.crow != 0 {
 			// e.g) row=1, col=0
+			e.n -= 1
 			e.crow -= 1
 			row.deleteAt(e.numberOfRunesInRow() - 1)
 			e.updateRowRunes(row)
@@ -224,9 +223,14 @@ func (e *Editor) insertRune(row *Row, col int, newRune rune) {
 }
 
 func (e *Editor) replaceRow(newRune []rune) {
+	gt := NewGapTable(128)
+
+	for _, r := range newRune {
+		gt.AppendRune(r)
+	}
+
 	r := &Row{
-		n: len(newRune),
-		runes: newRune,
+		chars: gt,
 	}
 
 	e.rows[e.crow] = r
@@ -236,6 +240,10 @@ func (e *Editor) replaceRow(newRune []rune) {
 func (e *Editor) setRowPos(row int) {
 	if row < 0 {
 		row = 0
+	}
+
+	if row >= e.n {
+		row = e.n - 1
 	}
 
 	if row >= e.terminal.height {
@@ -251,6 +259,10 @@ func (e *Editor) setColPos(col int) {
 		col = 0
 	}
 
+	if col >= e.rows[e.crow].len() {
+		col = e.rows[e.crow].len()
+	}
+
 	if col >= e.terminal.width {
 		col = e.terminal.width - 1
 	}
@@ -262,10 +274,9 @@ func (e *Editor) setColPos(col int) {
 func (e *Editor) setRowCol(row int, col int) {
 	e.setRowPos(row)
 	e.setColPos(col)
-	e.moveCursor(e.crow, e.ccol)
 }
 
-func (e *Editor) numberOfRunesInRow() int { return e.rows[e.crow].n }
+func (e *Editor) numberOfRunesInRow() int { return e.rows[e.crow].chars.Len() }
 
 func (e *Editor) backspace() {
 	row := e.rows[e.crow]
@@ -273,7 +284,7 @@ func (e *Editor) backspace() {
 }
 
 func (e *Editor) next() {
-	if e.ccol >= e.rows[e.crow].n {
+	if e.ccol >= e.rows[e.crow].len() {
 		e.setRowCol(e.crow+1, 0)
 	} else {
 		e.setRowCol(e.crow, e.ccol+1)
@@ -281,17 +292,19 @@ func (e *Editor) next() {
 }
 
 func (e *Editor) newLine() {
+	e.n += 1
+
 	// Update the current row.
 	currentRow := e.rows[e.crow]
-	currentRowNewRunes := currentRow.runes[:e.ccol]
-	nextRowNewPrefixRunes := append([]rune{}, currentRow.runes[e.ccol:len(currentRow.runes)]...)
+	currentRowNewRunes := currentRow.chars.Runes()[:e.ccol]
+	nextRowNewPrefixRunes := append([]rune{}, currentRow.chars.Runes()[e.ccol:currentRow.chars.Len()]...)
 	currentRowNewRunes = append(currentRowNewRunes, '\n')
 	e.replaceRow(currentRowNewRunes)
 	e.setRowCol(e.crow+1, 0)
 
 	// Update the next row.
 	nextRow := e.rows[e.crow]
-	nextRowRunes := append(nextRowNewPrefixRunes, nextRow.runes...)
+	nextRowRunes := append(nextRowNewPrefixRunes, nextRow.chars.Runes()...)
 	e.replaceRow(nextRowRunes)
 	e.setRowCol(e.crow, 0)
 }
@@ -300,11 +313,8 @@ func (e *Editor) saveFile() {
 	sb := strings.Builder{}
 
 	for _, r := range e.rows {
-		if r.n >= 1 {
-			for _, ch := range r.runes {
-				if ch == rune(byte(0)) {
-					continue
-				}
+		if r.len() >= 1 {
+			for _, ch := range r.chars.Runes() {
 				sb.WriteRune(ch)
 			}
 		}
@@ -330,6 +340,8 @@ func (e *Editor) parseKey(b []byte) (rune, int) {
 				return ArrowRight, 3
 			case 'D':
 				return ArrowLeft, 3
+			default:
+				return Dummy, 0
 			}
 		}
 	}
@@ -388,12 +400,14 @@ func (e *Editor) interpretKey() {
 			e.timeChan <- resetMessage
 
 		case ControlP, ArrowUp:
-			e.setRowCol(e.crow-1, e.ccol)
+			e.setRowCol(e.crow - 1, e.ccol)
 
 		default:
 			e.insertRune(e.rows[e.crow], e.ccol, r)
 			e.setColPos(e.ccol + 1)
 		}
+
+		e.rows[e.crow].chars.RunesString()
 	}
 }
 
@@ -422,11 +436,11 @@ func newTerminal(fd int) *Terminal {
 }
 
 func makeRow() []*Row {
-	var rows = make([]*Row, 16)
+	// TODO
+	var rows = make([]*Row, 32)
 	for i := range rows {
 		rows[i] = &Row {
-			n:0,
-			runes:[]rune{},
+			chars: NewGapTable(128),
 		}
 	}
 	return rows
@@ -444,7 +458,7 @@ func newEditor(filePath string) *Editor {
 		keyChan:  make(chan rune),
 		timeChan: make(chan messageType),
 		terminal: terminal,
-		n: 0,
+		n: 1,
 	}
 
 	return e

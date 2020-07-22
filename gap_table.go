@@ -71,6 +71,7 @@ func (g *GapTable) InsertAt(index int, r rune) {
 		copyTarget := g.array[index: g.startPieceIndex]
 		n := copy(g.array[g.endPieceIndex - len(copyTarget) + 1 :g.endPieceIndex + 1], copyTarget)
 		g.array[index] = r
+		g.startPieceIndex = index + 1
 		g.endPieceIndex -= n
 	}
 
@@ -99,4 +100,14 @@ func (g *GapTable) Len() int {
 
 func (g *GapTable) Cap() int {
 	return cap(g.array)
+}
+
+func (g *GapTable) Runes() []rune {
+	return append(g.array[:g.startPieceIndex], g.array[g.endPieceIndex+1:]...)
+}
+
+func (g *GapTable) RunesString() string {
+	// err(g.array, g.startPieceIndex, g.endPieceIndex)
+	runes := append(g.array[:g.startPieceIndex], g.array[g.endPieceIndex+1:]...)
+	return string(runes)
 }

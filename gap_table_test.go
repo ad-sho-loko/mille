@@ -19,6 +19,22 @@ func TestGapTable_Insert_Append(t *testing.T) {
 	assert.Equal(t, []rune{r(97), r(98), r(99), r(0)}, g.array)
 	assert.Equal(t, 3, g.startPieceIndex)
 	assert.Equal(t, 3, g.endPieceIndex)
+
+	assert.Equal(t, "abc", g.RunesString())
+}
+
+func TestGapTable_Insert_Simple(t *testing.T) {
+	g := NewGapTable(8)
+	g.AppendRune(r(97))
+	g.AppendRune(r(97))
+	g.AppendRune(r(97))
+	g.InsertAt(1, r(98))
+
+	assert.Equal(t, []rune{r(97), r(98), r(97), r(0), r(0), r(0), r(97), r(97)}, g.array)
+	assert.Equal(t, 2, g.startPieceIndex)
+	assert.Equal(t, 5, g.endPieceIndex)
+
+	assert.Equal(t, "abaa", g.RunesString())
 }
 
 func TestGapTable_Insert_Middle(t *testing.T) {
@@ -28,8 +44,11 @@ func TestGapTable_Insert_Middle(t *testing.T) {
 	g.InsertAt(1, r(99))
 	g.InsertAt(2, r(100))
 	assert.Equal(t, []rune{r(97), r(99), r(100), r(0), r(0),r(0), r(0), r(98)}, g.array)
+
 	assert.Equal(t, 3, g.startPieceIndex)
 	assert.Equal(t, 6, g.endPieceIndex)
+
+	assert.Equal(t, "acdb", g.RunesString())
 }
 
 func TestGapTable_Insert_Complex(t *testing.T) {
