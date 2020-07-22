@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"golang.org/x/sys/unix"
 	"io/ioutil"
-	"os"
 	"strings"
 	"syscall"
 	"time"
@@ -62,9 +61,11 @@ type Row struct {
 	runes []rune
 }
 
+/*
 func err(a ...interface{}) {
 	_, _ = fmt.Fprintln(os.Stderr, a)
 }
+*/
 
 // Terminal
 func makeRaw(fd int) *unix.Termios {
@@ -134,6 +135,7 @@ func (e *Editor) writeStatusBar() {
 		e.write([]byte(string(ch)))
 	}
 
+	// Write Spacer
 	for i := len(e.filePath); i < e.terminal.width; i++ {
 		e.moveCursor(e.terminal.height, i)
 		e.write([]byte{' '})
@@ -201,12 +203,17 @@ func (r *Row) insertAt(colPos int, newRune rune) {
 }
 
 func (e *Editor) deleteRune(row *Row, col int) {
-	row.deleteAt(col)
-	e.updateRowRunes(row)
-
 	if e.ccol == 0 {
-		e.setRowCol(e.crow - 1, e.numberOfRunesInRow() - 1)
+		if e.crow != 0 {
+			// e.g) row=1, col=0
+			e.crow -= 1
+			row.deleteAt(e.numberOfRunesInRow() - 1)
+			e.updateRowRunes(row)
+			e.setRowCol(e.crow, e.numberOfRunesInRow() - 1)
+		}
 	} else {
+		row.deleteAt(col)
+		e.updateRowRunes(row)
 		e.setRowCol(e.crow, e.ccol - 1)
 	}
 }

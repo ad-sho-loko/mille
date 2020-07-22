@@ -72,7 +72,3 @@ func TestInsertAt_ASCII(t *testing.T) {
 	assert.Equal(t, 5, row.n)
 	assert.Equal(t, r(101), row.runes[4])
 }
-
-func TestNewLine_ASCII(t *testing.T) {
-	row := makeEmptyRow()
-}
