@@ -13,7 +13,6 @@ import (
 )
 
 // TODO:
-// Less Bug
 // Many Key Shortcut
 // Multi-Byte
 // Loading File
@@ -29,6 +28,7 @@ const (
 	ControlN   = 14
 	ControlP   = 16
 	ControlS   = 19
+	ControlV   = 22
 	BackSpace  = 127
 	ArrowUp    = 1000
 	ArrowDown  = 1001
@@ -66,7 +66,6 @@ type Terminal struct {
 
 type Row struct {
 	chars *GapTable
-	render *GapTable
 }
 
 func debug(a ...interface{}) {
@@ -76,7 +75,7 @@ func debug(a ...interface{}) {
 func (e *Editor) debugRowRunes() {
 	i := 0
 	for i < e.n {
-		_, _ = fmt.Fprintln(os.Stderr, i, ":", e.rows[i].chars.RunesString())
+		_, _ = fmt.Fprintln(os.Stderr, i, ":", e.rows[i].chars.Runes())
 		i += 1
 	}
 }
@@ -168,8 +167,8 @@ func (e *Editor) writeRow(r *Row) {
 		buf = append(buf, []byte(string(r))...)
 	}
 
-	e.flushRow()
 	e.moveCursor(e.crow, 0)
+	e.flushRow()
 	e.write(buf)
 }
 
@@ -192,6 +191,7 @@ func (e *Editor) moveCursor(row, col int) {
 }
 
 func (e *Editor) updateRowRunes(row *Row) {
+	debug("DEBUG: row updated at", e.crow, "for", row.chars.Runes())
 	e.writeRow(row)
 }
 
@@ -237,7 +237,7 @@ func (e *Editor) insertRune(row *Row, col int, newRune rune) {
 	e.updateRowRunes(row)
 }
 
-func (e *Editor) replaceRow(newRune []rune) {
+func (e *Editor) replaceRune(newRune []rune) {
 	gt := NewGapTable(128)
 
 	for _, r := range newRune {
@@ -249,6 +249,15 @@ func (e *Editor) replaceRow(newRune []rune) {
 	}
 
 	e.rows[e.crow] = r
+	e.updateRowRunes(r)
+}
+
+func (e *Editor) copyRow(dst int, src int) {
+	r := &Row {
+		chars: e.rows[src].chars,
+	}
+
+	e.rows[dst] = r
 	e.updateRowRunes(r)
 }
 
@@ -323,22 +332,29 @@ func (e *Editor) next() {
 }
 
 func (e *Editor) newLine() {
-	e.n += 1
+	// Update the trailing rows.
+	newLineRowPos := e.crow
+	e.crow = e.n
 
-	// Update the current row.
-	currentRow := e.rows[e.crow]
-	currentRowNewRunes := currentRow.chars.Runes()[:e.ccol]
-	nextRowNewPrefixRunes := append([]rune{}, currentRow.chars.Runes()[e.ccol:currentRow.chars.Len()]...)
-	currentRowNewRunes = append(currentRowNewRunes, '\n')
-	e.replaceRow(currentRowNewRunes)
-	e.setRowCol(e.crow+1, 0)
+	for e.crow > newLineRowPos + 1 {
+		e.copyRow(e.crow, e.crow - 1)
+		e.crow -= 1
+	}
+
+	e.n += 1
+	newLineRow := e.rows[newLineRowPos]
 
 	// Update the next row.
-	nextRow := e.rows[e.crow]
-	nextRowRunes := append(nextRowNewPrefixRunes, nextRow.chars.Runes()...)
-	e.replaceRow(nextRowRunes)
-	e.setRowCol(e.crow, 0)
+	nextRowRunes := append([]rune{}, newLineRow.chars.Runes()[e.ccol:]...)
+	e.replaceRune(nextRowRunes)
 
+	// Update the current row.
+	currentRowNewRunes := append([]rune{}, newLineRow.chars.Runes()[:e.ccol]...)
+	currentRowNewRunes = append(currentRowNewRunes, '\n')
+	e.setRowCol(newLineRowPos, 0)
+	e.replaceRune(currentRowNewRunes)
+
+	e.setRowCol(e.crow+1, 0)
 	e.debugRowRunes()
 }
 
@@ -434,6 +450,10 @@ func (e *Editor) interpretKey() {
 
 		case ControlP, ArrowUp:
 			e.setRowCol(e.crow - 1, e.ccol)
+
+		// for debug
+		case ControlV:
+			e.flushRow()
 
 		default:
 			e.insertRune(e.rows[e.crow], e.ccol, r)
