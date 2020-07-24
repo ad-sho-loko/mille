@@ -16,8 +16,10 @@ import (
 // Key Definitions
 const (
 	Dummy      = -1
+	ControlA   = 1
 	ControlB   = 2
 	ControlC   = 3
+	ControlE   = 5
 	ControlF   = 6
 	ControlH   = 8
 	Enter      = 13
@@ -420,7 +422,7 @@ func saveFile(filePath string, rows []*Row) {
 	sb := strings.Builder{}
 
 	for _, r := range rows {
-		if r.len() >= 1 {
+		if r != nil && r.len() >= 1 {
 			for _, ch := range r.chars.Runes() {
 				sb.WriteRune(ch)
 			}
@@ -521,12 +523,18 @@ func (e *Editor) interpretKey() {
 		r := <-e.keyChan
 
 		switch r {
+		case ControlA:
+			e.setRowCol(e.crow, 0)
+
 		case ControlB, ArrowLeft:
 			e.back()
 
 		case ControlC:
 			e.exit()
 			return
+
+		case ControlE:
+			e.setRowCol(e.crow, e.numberOfRunesInRow())
 
 		case ControlF, ArrowRight:
 			e.next()
