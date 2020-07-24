@@ -308,7 +308,32 @@ func (e *Editor) numberOfRunesInRow() int { return e.rows[e.crow].chars.Len() }
 
 func (e *Editor) backspace() {
 	row := e.rows[e.crow]
-	e.deleteRune(row, e.ccol-1)
+	if e.ccol == 0 {
+		if e.crow > 0 {
+			e.crow -= 1
+			prevRow := e.rows[e.crow]
+
+			restoreRowPos := e.crow
+			restoreColPos := prevRow.len() - 1
+
+			// Update the previous row.
+			for _, r := range row.chars.Runes()[:row.chars.Len()] {
+				e.insertRune(prevRow, prevRow.len() - 1, r)
+			}
+
+			// Update the trailing rows.
+			e.crow += 1
+			for e.crow < e.n {
+				e.copyRow(e.crow, e.crow + 1)
+				e.crow += 1
+			}
+
+			e.n -= 1
+			e.setRowCol(restoreRowPos, restoreColPos)
+		}
+	} else {
+		e.deleteRune(row, e.ccol-1)
+	}
 }
 
 func (e *Editor) back() {
