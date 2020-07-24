@@ -4,6 +4,7 @@ type GapTable struct {
 	array []rune
 	startPieceIndex int
 	endPieceIndex int
+	invisibleRuneCount int
 }
 
 func NewGapTable(cap int) *GapTable {
@@ -11,6 +12,7 @@ func NewGapTable(cap int) *GapTable {
 		array: make([]rune, cap),
 		startPieceIndex: 0,
 		endPieceIndex: cap - 1,
+		invisibleRuneCount: 0,
 	}
 }
 
@@ -48,6 +50,10 @@ func (g *GapTable) AppendRune(r rune) {
 }
 
 func (g *GapTable) InsertAt(index int, r rune) {
+	if r == 0x0a {
+		g.invisibleRuneCount += 1
+	}
+
 	if index == g.startPieceIndex {
 		g.array[g.startPieceIndex] = r
 		g.startPieceIndex += 1
@@ -81,6 +87,10 @@ func (g *GapTable) InsertAt(index int, r rune) {
 }
 
 func (g *GapTable) DeleteAt(index int) {
+	if g.At(index) == 0x0a {
+		g.invisibleRuneCount -= 1
+	}
+
 	if index < g.startPieceIndex {
 		copyTarget := g.array[index: g.startPieceIndex]
 		n := copy(g.array[g.endPieceIndex - len(copyTarget) + 1 :g.endPieceIndex + 1], copyTarget)
@@ -102,12 +112,15 @@ func (g *GapTable) Cap() int {
 	return cap(g.array)
 }
 
+func (g *GapTable) VisibleLen() int {
+	return g.Len() - g.invisibleRuneCount
+}
+
 func (g *GapTable) Runes() []rune {
 	return append(g.array[:g.startPieceIndex], g.array[g.endPieceIndex+1:]...)
 }
 
 func (g *GapTable) RunesString() string {
-	// err(g.array, g.startPieceIndex, g.endPieceIndex)
 	runes := append(g.array[:g.startPieceIndex], g.array[g.endPieceIndex+1:]...)
 	return string(runes)
 }

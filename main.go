@@ -5,11 +5,18 @@ import (
 	"fmt"
 	"golang.org/x/sys/unix"
 	"io/ioutil"
+	"os"
 	"strings"
 	"syscall"
 	"time"
 	"unicode/utf8"
 )
+
+// TODO:
+// Less Bug
+// Many Key Shortcut
+// Multi-Byte
+// Loading File
 
 // Key Definitions
 const (
@@ -59,13 +66,20 @@ type Terminal struct {
 
 type Row struct {
 	chars *GapTable
+	render *GapTable
 }
 
-/*
 func debug(a ...interface{}) {
 	_, _ = fmt.Fprintln(os.Stderr, a)
 }
-*/
+
+func (e *Editor) debugRowRunes() {
+	i := 0
+	for i < e.n {
+		_, _ = fmt.Fprintln(os.Stderr, i, ":", e.rows[i].chars.RunesString())
+		i += 1
+	}
+}
 
 // Terminal
 func makeRaw(fd int) *unix.Termios {
@@ -150,8 +164,8 @@ func (e *Editor) write(b []byte) {
 func (e *Editor) writeRow(r *Row) {
 	var buf []byte
 
-	for _, s := range r.chars.Runes() {
-		buf = append(buf, []byte(string(s))...)
+	for _, r := range r.chars.Runes() {
+		buf = append(buf, []byte(string(r))...)
 	}
 
 	e.flushRow()
@@ -199,6 +213,7 @@ func (r *Row) insertAt(colPos int, newRune rune) {
 }
 
 func (r *Row) len() int { return r.chars.Len() }
+func (r *Row) visibleLen() int { return r.chars.VisibleLen() }
 
 func (e *Editor) deleteRune(row *Row, col int) {
 	if e.ccol == 0 {
@@ -259,8 +274,8 @@ func (e *Editor) setColPos(col int) {
 		col = 0
 	}
 
-	if col >= e.rows[e.crow].len() {
-		col = e.rows[e.crow].len()
+	if col >= e.rows[e.crow].visibleLen() {
+		col = e.rows[e.crow].visibleLen()
 	}
 
 	if col >= e.terminal.width {
@@ -272,6 +287,10 @@ func (e *Editor) setColPos(col int) {
 }
 
 func (e *Editor) setRowCol(row int, col int) {
+	if row > e.n && col > e.rows[e.crow].visibleLen() {
+		return
+	}
+
 	e.setRowPos(row)
 	e.setColPos(col)
 }
@@ -283,9 +302,21 @@ func (e *Editor) backspace() {
 	e.deleteRune(row, e.ccol-1)
 }
 
+func (e *Editor) back() {
+	if e.ccol == 0 {
+		if e.crow > 0 {
+			e.setRowCol(e.crow - 1, e.rows[e.crow - 1].visibleLen())
+		}
+	} else {
+		e.setRowCol(e.crow, e.ccol - 1)
+	}
+}
+
 func (e *Editor) next() {
-	if e.ccol >= e.rows[e.crow].len() {
-		e.setRowCol(e.crow+1, 0)
+	if e.ccol >= e.rows[e.crow].visibleLen() {
+		if e.crow + 1 < e.n {
+			e.setRowCol(e.crow+1, 0)
+		}
 	} else {
 		e.setRowCol(e.crow, e.ccol+1)
 	}
@@ -307,6 +338,8 @@ func (e *Editor) newLine() {
 	nextRowRunes := append(nextRowNewPrefixRunes, nextRow.chars.Runes()...)
 	e.replaceRow(nextRowRunes)
 	e.setRowCol(e.crow, 0)
+
+	e.debugRowRunes()
 }
 
 func (e *Editor) saveFile() {
@@ -376,7 +409,7 @@ func (e *Editor) interpretKey() {
 
 		switch r {
 		case ControlB, ArrowLeft:
-			e.setRowCol(e.crow, e.ccol-1)
+			e.back()
 
 		case ControlC:
 			e.exit()
@@ -406,8 +439,6 @@ func (e *Editor) interpretKey() {
 			e.insertRune(e.rows[e.crow], e.ccol, r)
 			e.setColPos(e.ccol + 1)
 		}
-
-		e.rows[e.crow].chars.RunesString()
 	}
 }
 
@@ -477,7 +508,7 @@ func main() {
 	args := flag.Args()
 
 	if len(args) != 1 {
-		fmt.Println("Usage: go run . <filename>")
+		fmt.Println("Usage: ./mille <filename>")
 		return
 	}
 
