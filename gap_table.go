@@ -1,17 +1,17 @@
 package main
 
 type GapTable struct {
-	array []rune
-	startPieceIndex int
-	endPieceIndex int
+	array              []rune
+	startPieceIndex    int
+	endPieceIndex      int
 	invisibleRuneCount int
 }
 
 func NewGapTable(cap int) *GapTable {
 	return &GapTable{
-		array: make([]rune, cap),
-		startPieceIndex: 0,
-		endPieceIndex: cap - 1,
+		array:              make([]rune, cap),
+		startPieceIndex:    0,
+		endPieceIndex:      cap - 1,
 		invisibleRuneCount: 0,
 	}
 }
@@ -33,7 +33,7 @@ func (g *GapTable) At(index int) rune {
 		return g.array[index]
 	}
 
-	return g.array[index + g.endPieceIndex - g.startPieceIndex + 1]
+	return g.array[index+g.endPieceIndex-g.startPieceIndex+1]
 }
 
 func (g *GapTable) SetAt(index int, r rune) {
@@ -42,7 +42,7 @@ func (g *GapTable) SetAt(index int, r rune) {
 		return
 	}
 
-	g.array[index + g.endPieceIndex - g.startPieceIndex + 1] = r
+	g.array[index+g.endPieceIndex-g.startPieceIndex+1] = r
 }
 
 func (g *GapTable) AppendRune(r rune) {
@@ -62,20 +62,20 @@ func (g *GapTable) InsertAt(index int, r rune) {
 			// Insert E at #
 			// before: [A, B, C, x, D] #
 			// after:  [A, B, C, x, D, E]
-			copyTarget := g.array[g.endPieceIndex+1: g.Cap()]
-			_ = copy(g.array[g.endPieceIndex: g.Cap() - 1], copyTarget)
-			g.array[g.Cap() - 1] = r
+			copyTarget := g.array[g.endPieceIndex+1 : g.Cap()]
+			_ = copy(g.array[g.endPieceIndex:g.Cap()-1], copyTarget)
+			g.array[g.Cap()-1] = r
 			g.endPieceIndex -= 1
 		} else {
-			copyTarget := g.array[g.endPieceIndex + 1: index + g.endPieceIndex - g.startPieceIndex + 2]
+			copyTarget := g.array[g.endPieceIndex+1 : index+g.endPieceIndex-g.startPieceIndex+2]
 			n := copy(g.array[g.startPieceIndex:g.startPieceIndex+len(copyTarget)], copyTarget)
 			g.SetAt(index, r)
 			g.startPieceIndex += n
 			g.endPieceIndex += n - 1
 		}
 	} else {
-		copyTarget := g.array[index: g.startPieceIndex]
-		n := copy(g.array[g.endPieceIndex - len(copyTarget) + 1 :g.endPieceIndex + 1], copyTarget)
+		copyTarget := g.array[index:g.startPieceIndex]
+		n := copy(g.array[g.endPieceIndex-len(copyTarget)+1:g.endPieceIndex+1], copyTarget)
 		g.array[index] = r
 		g.startPieceIndex = index + 1
 		g.endPieceIndex -= n
@@ -92,12 +92,12 @@ func (g *GapTable) DeleteAt(index int) {
 	}
 
 	if index < g.startPieceIndex {
-		copyTarget := g.array[index: g.startPieceIndex]
-		n := copy(g.array[g.endPieceIndex - len(copyTarget) + 1 :g.endPieceIndex + 1], copyTarget)
+		copyTarget := g.array[index:g.startPieceIndex]
+		n := copy(g.array[g.endPieceIndex-len(copyTarget)+1:g.endPieceIndex+1], copyTarget)
 		g.startPieceIndex -= n
 		g.endPieceIndex -= n - 1
 	} else {
-		copyTarget := g.array[g.endPieceIndex + 1: index + g.endPieceIndex - g.startPieceIndex + 2]
+		copyTarget := g.array[g.endPieceIndex+1 : index+g.endPieceIndex-g.startPieceIndex+2]
 		n := copy(g.array[g.startPieceIndex:g.startPieceIndex+len(copyTarget)], copyTarget)
 		g.startPieceIndex += n - 1
 		g.endPieceIndex += n
@@ -123,4 +123,16 @@ func (g *GapTable) Runes() []rune {
 func (g *GapTable) RunesString() string {
 	runes := append(g.array[:g.startPieceIndex], g.array[g.endPieceIndex+1:]...)
 	return string(runes)
+}
+
+func (g *GapTable) VisibleRunes() []rune {
+	runes := g.Runes()
+	var visibleRunes []rune
+
+	for _, r := range runes {
+		if r == 0x0a { continue }
+		visibleRunes = append(visibleRunes, r)
+	}
+
+	return visibleRunes
 }

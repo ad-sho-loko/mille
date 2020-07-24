@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"golang.org/x/sys/unix"
@@ -11,11 +12,6 @@ import (
 	"time"
 	"unicode/utf8"
 )
-
-// TODO:
-// Many Key Shortcut
-// Multi-Byte
-// Loading File
 
 // Key Definitions
 const (
@@ -43,6 +39,7 @@ const (
 )
 
 type messageType int
+
 const (
 	resetMessage messageType = iota + 1
 )
@@ -55,7 +52,7 @@ type Editor struct {
 	ccol     int
 	rows     []*Row
 	terminal *Terminal
-	n int  // numberOfRows
+	n        int // numberOfRows
 }
 
 type Terminal struct {
@@ -195,6 +192,15 @@ func (e *Editor) updateRowRunes(row *Row) {
 	e.writeRow(row)
 }
 
+func (e *Editor) refreshAllRows() {
+	for i := 0; i < e.n; i += 1 {
+		e.crow = i
+		e.writeRow(e.rows[i])
+	}
+
+	e.setRowCol(0, 0)
+}
+
 // Models
 func (r *Row) deleteAt(col int) {
 	if col >= r.len() {
@@ -212,10 +218,11 @@ func (r *Row) insertAt(colPos int, newRune rune) {
 	r.chars.InsertAt(colPos, newRune)
 }
 
-func (r *Row) len() int { return r.chars.Len() }
+func (r *Row) len() int        { return r.chars.Len() }
 func (r *Row) visibleLen() int { return r.chars.VisibleLen() }
 
 func (e *Editor) deleteRune(row *Row, col int) {
+	// TODO: Refactoring
 	if e.ccol == 0 {
 		if e.crow != 0 {
 			// e.g) row=1, col=0
@@ -223,18 +230,32 @@ func (e *Editor) deleteRune(row *Row, col int) {
 			e.crow -= 1
 			row.deleteAt(e.numberOfRunesInRow() - 1)
 			e.updateRowRunes(row)
-			e.setRowCol(e.crow, e.numberOfRunesInRow() - 1)
+			e.setRowCol(e.crow, e.numberOfRunesInRow()-1)
 		}
 	} else {
 		row.deleteAt(col)
 		e.updateRowRunes(row)
-		e.setRowCol(e.crow, e.ccol - 1)
+		e.setRowCol(e.crow, e.ccol-1)
 	}
 }
 
 func (e *Editor) insertRune(row *Row, col int, newRune rune) {
 	row.insertAt(col, newRune)
 	e.updateRowRunes(row)
+}
+
+func (e *Editor) deleteRow(col int) {
+	gt := NewGapTable(128)
+	r := &Row{
+		chars: gt,
+	}
+
+	e.rows[col] = r
+
+	prevRowPos := e.crow
+	e.crow = col
+	e.updateRowRunes(r)
+	e.crow = prevRowPos
 }
 
 func (e *Editor) replaceRune(newRune []rune) {
@@ -253,7 +274,7 @@ func (e *Editor) replaceRune(newRune []rune) {
 }
 
 func (e *Editor) copyRow(dst int, src int) {
-	r := &Row {
+	r := &Row{
 		chars: e.rows[src].chars,
 	}
 
@@ -308,47 +329,54 @@ func (e *Editor) numberOfRunesInRow() int { return e.rows[e.crow].chars.Len() }
 
 func (e *Editor) backspace() {
 	row := e.rows[e.crow]
+
 	if e.ccol == 0 {
 		if e.crow > 0 {
+			e.n -= 1
 			e.crow -= 1
+
 			prevRow := e.rows[e.crow]
 
 			restoreRowPos := e.crow
 			restoreColPos := prevRow.len() - 1
 
 			// Update the previous row.
-			for _, r := range row.chars.Runes()[:row.chars.Len()] {
-				e.insertRune(prevRow, prevRow.len() - 1, r)
-			}
+			newRunes := append([]rune{}, prevRow.chars.Runes()[:prevRow.len()-1]...)
+			newRunes = append(newRunes, row.chars.Runes()...)
+			e.replaceRune(newRunes)
 
 			// Update the trailing rows.
 			e.crow += 1
 			for e.crow < e.n {
-				e.copyRow(e.crow, e.crow + 1)
+				e.copyRow(e.crow, e.crow+1)
 				e.crow += 1
 			}
 
-			e.n -= 1
+			// Delete the last row
+			e.deleteRow(e.n)
+
 			e.setRowCol(restoreRowPos, restoreColPos)
 		}
 	} else {
 		e.deleteRune(row, e.ccol-1)
 	}
+
+	e.debugRowRunes()
 }
 
 func (e *Editor) back() {
 	if e.ccol == 0 {
 		if e.crow > 0 {
-			e.setRowCol(e.crow - 1, e.rows[e.crow - 1].visibleLen())
+			e.setRowCol(e.crow-1, e.rows[e.crow-1].visibleLen())
 		}
 	} else {
-		e.setRowCol(e.crow, e.ccol - 1)
+		e.setRowCol(e.crow, e.ccol-1)
 	}
 }
 
 func (e *Editor) next() {
 	if e.ccol >= e.rows[e.crow].visibleLen() {
-		if e.crow + 1 < e.n {
+		if e.crow+1 < e.n {
 			e.setRowCol(e.crow+1, 0)
 		}
 	} else {
@@ -361,8 +389,8 @@ func (e *Editor) newLine() {
 	newLineRowPos := e.crow
 	e.crow = e.n
 
-	for e.crow > newLineRowPos + 1 {
-		e.copyRow(e.crow, e.crow - 1)
+	for e.crow > newLineRowPos+1 {
+		e.copyRow(e.crow, e.crow-1)
 		e.crow -= 1
 	}
 
@@ -383,18 +411,62 @@ func (e *Editor) newLine() {
 	e.debugRowRunes()
 }
 
-func (e *Editor) saveFile() {
+func existsFile(filename string) bool {
+	_, err := os.Stat(filename)
+	return err == nil
+}
+
+func saveFile(filePath string, rows []*Row) {
 	sb := strings.Builder{}
 
-	for _, r := range e.rows {
+	for _, r := range rows {
 		if r.len() >= 1 {
 			for _, ch := range r.chars.Runes() {
 				sb.WriteRune(ch)
 			}
 		}
 	}
+	_ = ioutil.WriteFile(filePath, []byte(sb.String()), 0644)
+}
 
-	ioutil.WriteFile("tmp", []byte(sb.String()), 0644)
+func loadFile(filePath string) *Editor {
+	e := &Editor{
+		crow:     0,
+		ccol:     0,
+		filePath: filePath,
+		keyChan:  make(chan rune),
+		timeChan: make(chan messageType),
+		n:        0,
+	}
+
+	rows := make([]*Row, 64)
+	f, err := os.Open(filePath)
+	if err != nil {
+		panic(err)
+	}
+
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		gt := NewGapTable(128)
+
+		line := scanner.Text()
+		for _, s := range line {
+			gt.AppendRune(s)
+		}
+		gt.AppendRune('\n')
+
+		rows[e.n] = &Row{chars: gt}
+		e.n += 1
+	}
+
+	if err := scanner.Err(); err != nil {
+		panic(err)
+	}
+
+	e.rows = rows
+	return e
 }
 
 func (e *Editor) exit() {
@@ -469,12 +541,12 @@ func (e *Editor) interpretKey() {
 			e.newLine()
 
 		case ControlS:
-			e.saveFile()
+			saveFile(e.filePath, e.rows)
 			e.writeHelpMenu("Saved!")
 			e.timeChan <- resetMessage
 
 		case ControlP, ArrowUp:
-			e.setRowCol(e.crow - 1, e.ccol)
+			e.setRowCol(e.crow-1, e.ccol)
 
 		// for debug
 		case ControlV:
@@ -487,9 +559,9 @@ func (e *Editor) interpretKey() {
 	}
 }
 
-func (e *Editor) timerEventPoller(){
+func (e *Editor) timerEventPoller() {
 	for {
-		switch <- e.timeChan {
+		switch <-e.timeChan {
 		case resetMessage:
 			t := time.NewTimer(2 * time.Second)
 			<-t.C
@@ -511,22 +583,27 @@ func newTerminal(fd int) *Terminal {
 	return terminal
 }
 
-func makeRow() []*Row {
-	// TODO
-	var rows = make([]*Row, 32)
+func makeRows() []*Row {
+	var rows = make([]*Row, 64) // TODO
 	for i := range rows {
-		rows[i] = &Row {
+		rows[i] = &Row{
 			chars: NewGapTable(128),
 		}
 	}
 	return rows
 }
 
-func newEditor(filePath string) *Editor {
-	rows := makeRow()
+func newEditor(filePath string) (*Editor, bool) {
 	terminal := newTerminal(0)
 
-	e := &Editor{
+	if existsFile(filePath) {
+		e := loadFile(filePath)
+		e.terminal = terminal
+		return e, true
+	}
+
+	rows := makeRows()
+	return &Editor{
 		crow:     0,
 		ccol:     0,
 		rows:     rows,
@@ -534,15 +611,18 @@ func newEditor(filePath string) *Editor {
 		keyChan:  make(chan rune),
 		timeChan: make(chan messageType),
 		terminal: terminal,
-		n: 1,
-	}
-
-	return e
+		n:        1,
+	}, false
 }
 
 func run(filePath string) {
-	e := newEditor(filePath)
+	e, needRefresh := newEditor(filePath)
 	e.initTerminal()
+
+	if needRefresh {
+		e.refreshAllRows()
+	}
+
 	go e.readKeys()
 	go e.timerEventPoller()
 	e.interpretKey()

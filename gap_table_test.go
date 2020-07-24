@@ -43,7 +43,7 @@ func TestGapTable_Insert_Middle(t *testing.T) {
 	g.InsertAt(1, r(98))
 	g.InsertAt(1, r(99))
 	g.InsertAt(2, r(100))
-	assert.Equal(t, []rune{r(97), r(99), r(100), r(0), r(0),r(0), r(0), r(98)}, g.array)
+	assert.Equal(t, []rune{r(97), r(99), r(100), r(0), r(0), r(0), r(0), r(98)}, g.array)
 
 	assert.Equal(t, 3, g.startPieceIndex)
 	assert.Equal(t, 6, g.endPieceIndex)
