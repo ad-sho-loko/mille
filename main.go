@@ -120,7 +120,8 @@ type Editor struct {
 	ccol     int
 	rows     []*Row
 	terminal *Terminal
-	n        int // numberOfRows
+	n        int  // numberOfRows
+	debug    bool // for debug
 }
 
 type Terminal struct {
@@ -133,15 +134,19 @@ type Row struct {
 	chars *GapTable
 }
 
-func debug(a ...interface{}) {
-	_, _ = fmt.Fprintln(os.Stderr, a)
+func (e *Editor) debugPrint(a ...interface{}) {
+	if e.debug {
+		_, _ = fmt.Fprintln(os.Stderr, a...)
+	}
 }
 
 func (e *Editor) debugRowRunes() {
-	i := 0
-	for i < e.n {
-		_, _ = fmt.Fprintln(os.Stderr, i, ":", e.rows[i].chars.Runes())
-		i += 1
+	if e.debug {
+		i := 0
+		for i < e.n {
+			_, _ = fmt.Fprintln(os.Stderr, i, ":", e.rows[i].chars.Runes())
+			i += 1
+		}
 	}
 }
 
@@ -296,7 +301,7 @@ func (e *Editor) moveCursor(row, col int) {
 }
 
 func (e *Editor) updateRowRunes(row *Row) {
-	debug("DEBUG: row updated at", e.crow, "for", row.chars.Runes())
+	e.debugPrint("DEBUG: row updated at", e.crow, "for", row.chars.Runes())
 	e.writeRow(row)
 }
 
@@ -330,21 +335,9 @@ func (r *Row) len() int        { return r.chars.Len() }
 func (r *Row) visibleLen() int { return r.chars.VisibleLen() }
 
 func (e *Editor) deleteRune(row *Row, col int) {
-	// TODO: Refactoring
-	if e.ccol == 0 {
-		if e.crow != 0 {
-			// e.g) row=1, col=0
-			e.n -= 1
-			e.crow -= 1
-			row.deleteAt(e.numberOfRunesInRow() - 1)
-			e.updateRowRunes(row)
-			e.setRowCol(e.crow, e.numberOfRunesInRow()-1)
-		}
-	} else {
-		row.deleteAt(col)
-		e.updateRowRunes(row)
-		e.setRowCol(e.crow, e.ccol-1)
-	}
+	row.deleteAt(col)
+	e.updateRowRunes(row)
+	e.setRowCol(e.crow, e.ccol-1)
 }
 
 func (e *Editor) insertRune(row *Row, col int, newRune rune) {
@@ -462,7 +455,6 @@ func (e *Editor) backspace() {
 
 			// Delete the last row
 			e.deleteRow(e.n)
-
 			e.setRowCol(restoreRowPos, restoreColPos)
 		}
 	} else {
@@ -547,7 +539,7 @@ func loadFile(filePath string) *Editor {
 		n:        0,
 	}
 
-	rows := make([]*Row, 64)
+	rows := makeRows()
 	f, err := os.Open(filePath)
 	if err != nil {
 		panic(err)
@@ -673,7 +665,7 @@ func (e *Editor) interpretKey() {
 	}
 }
 
-func (e *Editor) timerEventPoller() {
+func (e *Editor) pollTimerEvent() {
 	for {
 		switch <-e.timeChan {
 		case resetMessage:
@@ -707,7 +699,7 @@ func makeRows() []*Row {
 	return rows
 }
 
-func newEditor(filePath string) (*Editor, bool) {
+func newEditor(filePath string, debug bool) (*Editor, bool) {
 	terminal := newTerminal(0)
 
 	if existsFile(filePath) {
@@ -726,11 +718,12 @@ func newEditor(filePath string) (*Editor, bool) {
 		timeChan: make(chan messageType),
 		terminal: terminal,
 		n:        1,
+		debug:    debug,
 	}, false
 }
 
-func run(filePath string) {
-	e, needRefresh := newEditor(filePath)
+func run(filePath string, debug bool) {
+	e, needRefresh := newEditor(filePath, debug)
 	e.initTerminal()
 
 	if needRefresh {
@@ -738,18 +731,18 @@ func run(filePath string) {
 	}
 
 	go e.readKeys()
-	go e.timerEventPoller()
+	go e.pollTimerEvent()
 	e.interpretKey()
 }
 
 func main() {
 	flag.Parse()
-	args := flag.Args()
 
-	if len(args) != 1 {
-		fmt.Println("Usage: ./mille <filename>")
+	if flag.NArg() < 1 || flag.NArg() > 3 {
+		fmt.Println("Usage: ./mille <filename> [--debug]")
 		return
 	}
 
-	run(args[0])
+	debug := flag.NArg() == 2 && flag.Arg(1) == "--debug"
+	run(flag.Arg(0), debug)
 }
