@@ -46,6 +46,10 @@ const (
 	BgCyan           = 46
 )
 
+const (
+	helpMessage = "HELP: Ctrl+S = Save / Ctrl+C = Quit"
+)
+
 type messageType int
 
 const (
@@ -192,7 +196,7 @@ func getWindowSize(fd int) (int, int) {
 
 func (e *Editor) initTerminal() {
 	e.flush()
-	e.writeHelpMenu("HELP: Ctrl+S = Save / Ctrl+C = Quit")
+	e.writeHelpMenu(helpMessage)
 	e.writeStatusBar()
 	e.moveCursor(e.crow, e.ccol)
 }
@@ -446,18 +450,6 @@ func (e *Editor) replaceRune(row int, newRune []rune) {
 	e.crow = prevRowPos
 }
 
-func (e *Editor) copyRow(dst int, src int) {
-	r := &Row{
-		chars: e.rows[src].chars,
-	}
-	e.rows[dst] = r
-
-	prevRowPos := e.crow
-	e.crow = dst - e.scroolrow
-	e.updateRowRunes(r)
-	e.crow = prevRowPos
-}
-
 func (e *Editor) insertRow(row int, runes []rune) {
 	gt := NewGapTable(128)
 
@@ -496,15 +488,17 @@ func (e *Editor) backspace() {
 
 	if e.ccol == 0 {
 		if e.crow + e.scroolrow > 0 {
-			prevRow := e.rows[e.crow + e.scroolrow - 1]
+			prevRowPos := e.crow + e.scroolrow - 1
+			currentRowPos := e.crow + e.scroolrow
+			prevRow := e.rows[prevRowPos]
 
 			// Update the previous row.
 			newRunes := append([]rune{}, prevRow.chars.Runes()[:prevRow.len()-1]...)
 			newRunes = append(newRunes, row.chars.Runes()...)
-			e.replaceRune(e.crow + e.scroolrow - 1, newRunes)
+			e.replaceRune(prevRowPos, newRunes)
 
 			// Delete the current row
-			e.deleteRow(e.crow + e.scroolrow)
+			e.deleteRow(currentRowPos)
 			e.setRowCol(e.crow - 1, prevRow.len() - 1)
 		}
 	} else {
@@ -540,7 +534,6 @@ func (e *Editor) newLine() {
 	currentLineRow := e.rows[currentLineRowPos]
 
 	newLineRowPos := e.crow + e.scroolrow + 1
-	// newLineRow := e.rows[newLineRowPos]
 
 	nextRowRunes := append([]rune{}, currentLineRow.chars.Runes()[e.ccol:]...)
 	e.insertRow(newLineRowPos, nextRowRunes)
@@ -718,7 +711,7 @@ func (e *Editor) pollTimerEvent() {
 		case resetMessage:
 			t := time.NewTimer(2 * time.Second)
 			<-t.C
-			e.writeHelpMenu("")
+			e.writeHelpMenu(helpMessage)
 		}
 	}
 }
