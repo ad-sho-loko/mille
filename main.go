@@ -40,10 +40,8 @@ type color int
 
 const (
 	DummyColor color = 37
-	FgBlue           = 34
-	FgMagenta        = 35
+	FgGreen          = 32
 	FgCyan           = 36
-	FgWhite          = 37
 	BgBlack          = 40
 	BgCyan           = 46
 )
@@ -257,12 +255,22 @@ func (e *Editor) highlight(b []byte) []color {
 	// ASCII-only
 	ascii := string(b)
 
+	// Keywords
 	for key := range keywordColor {
 		index := strings.Index(ascii, string(key))
 		if index != -1 {
 			for i := 0; i < len(string(key)); i += 1 {
 				colors[index+i] = keywordColor[key]
 			}
+		}
+	}
+
+	// String Literal
+	isStringLit := false
+	for i, b := range ascii {
+		if b == '"' || isStringLit {
+			if b == '"' { isStringLit = !isStringLit }
+			colors[i] = FgGreen
 		}
 	}
 
