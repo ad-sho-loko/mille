@@ -130,7 +130,9 @@ func (g *GapTable) VisibleRunes() []rune {
 	var visibleRunes []rune
 
 	for _, r := range runes {
-		if r == 0x0a { continue }
+		if r == 0x0a {
+			continue
+		}
 		visibleRunes = append(visibleRunes, r)
 	}
 

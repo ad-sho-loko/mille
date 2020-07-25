@@ -7,6 +7,7 @@ import (
 	"golang.org/x/sys/unix"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -15,7 +16,7 @@ import (
 
 // Key Definitions
 const (
-	Dummy      = -1
+	DummyKey   = -1
 	ControlA   = 1
 	ControlB   = 2
 	ControlC   = 3
@@ -35,9 +36,16 @@ const (
 )
 
 // Color Definition
+type color int
+
 const (
-	Black = 40
-	Cyan  = 46
+	DummyColor color = 37
+	FgBlue           = 34
+	FgMagenta        = 35
+	FgCyan           = 36
+	FgWhite          = 37
+	BgBlack          = 40
+	BgCyan           = 46
 )
 
 type messageType int
@@ -45,6 +53,64 @@ type messageType int
 const (
 	resetMessage messageType = iota + 1
 )
+
+type Keyword string
+
+const (
+	Break       Keyword = "break"
+	Default             = "default"
+	Func                = "func"
+	Interface           = "interface"
+	Select              = "select"
+	Case                = "case"
+	Defer               = "defer"
+	Go                  = "go"
+	Map                 = "map"
+	Struct              = "struct"
+	Chan                = "chan"
+	Else                = "else"
+	Goto                = "goto"
+	Package             = "package"
+	Switch              = "switch"
+	Const               = "const"
+	Fallthrough         = "fallthrough"
+	If                  = "if"
+	Range               = "range"
+	Type                = "type"
+	Continue            = "continue"
+	For                 = "for"
+	Import              = "import"
+	Return              = "return"
+	Var                 = "var"
+)
+
+var keywordColor = map[Keyword]color{
+	Break:       FgCyan,
+	Default:     FgCyan,
+	Interface:   FgCyan,
+	Select:      FgCyan,
+	Case:        FgCyan,
+	Defer:       FgCyan,
+	Go:          FgCyan,
+	Map:         FgCyan,
+	Struct:      FgCyan,
+	Chan:        FgCyan,
+	Else:        FgCyan,
+	Goto:        FgCyan,
+	Switch:      FgCyan,
+	Const:       FgCyan,
+	Fallthrough: FgCyan,
+	Return:      FgCyan,
+	Range:       FgCyan,
+	Type:        FgCyan,
+	Continue:    FgCyan,
+	For:         FgCyan,
+	If:          FgCyan,
+	Package:     FgCyan,
+	Import:      FgCyan,
+	Func:        FgCyan,
+	Var:         FgCyan,
+}
 
 type Editor struct {
 	filePath string
@@ -138,8 +204,8 @@ func (e *Editor) writeHelpMenu(message string) {
 }
 
 func (e *Editor) writeStatusBar() {
-	e.setBgColor(Cyan)
-	defer e.setBgColor(Black)
+	e.setBgColor(BgCyan)
+	defer e.setBgColor(BgBlack)
 
 	// Write file name
 	for i, ch := range e.filePath {
@@ -159,6 +225,39 @@ func (e *Editor) write(b []byte) {
 	syscall.Write(0, b)
 }
 
+func (e *Editor) writeWithColor(b []byte, colors []color) {
+	var newBuf []byte
+
+	for i, c := range colors {
+		s := fmt.Sprintf("\033[%dm", c)
+		newBuf = append(newBuf, []byte(s)...)
+		newBuf = append(newBuf, b[i])
+	}
+
+	syscall.Write(0, newBuf)
+}
+
+func (e *Editor) highlight(b []byte) []color {
+	colors := make([]color, len(b))
+	for i := range colors {
+		colors[i] = DummyColor
+	}
+
+	// ASCII-only
+	ascii := string(b)
+
+	for key := range keywordColor {
+		index := strings.Index(ascii, string(key))
+		if index != -1 {
+			for i := 0; i < len(string(key)); i += 1 {
+				colors[index+i] = keywordColor[key]
+			}
+		}
+	}
+
+	return colors
+}
+
 func (e *Editor) writeRow(r *Row) {
 	var buf []byte
 
@@ -168,7 +267,14 @@ func (e *Editor) writeRow(r *Row) {
 
 	e.moveCursor(e.crow, 0)
 	e.flushRow()
-	e.write(buf)
+
+	// If the extension of fileName is .go, write with highlights.
+	if filepath.Ext(e.filePath) == ".go" {
+		colors := e.highlight(buf)
+		e.writeWithColor(buf, colors)
+	} else {
+		e.write(buf)
+	}
 }
 
 func (e *Editor) flush() {
@@ -179,7 +285,7 @@ func (e *Editor) flushRow() {
 	e.write([]byte("\033[2K"))
 }
 
-func (e *Editor) setBgColor(color int) {
+func (e *Editor) setBgColor(color color) {
 	s := fmt.Sprintf("\033[%dm", color)
 	e.write([]byte(s))
 }
@@ -489,7 +595,7 @@ func (e *Editor) parseKey(b []byte) (rune, int) {
 			case 'D':
 				return ArrowLeft, 3
 			default:
-				return Dummy, 0
+				return DummyKey, 0
 			}
 		}
 	}
