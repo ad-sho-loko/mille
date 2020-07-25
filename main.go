@@ -453,8 +453,29 @@ func (e *Editor) copyRow(dst int, src int) {
 	e.rows[dst] = r
 
 	prevRowPos := e.crow
-	e.crow = dst
+	e.crow = dst - e.scroolrow
 	e.updateRowRunes(r)
+	e.crow = prevRowPos
+}
+
+func (e *Editor) insertRow(row int, runes []rune) {
+	gt := NewGapTable(128)
+
+	for _, r := range runes {
+		gt.AppendRune(r)
+	}
+
+	r := &Row{
+		chars: gt,
+	}
+
+	// https://github.com/golang/go/wiki/SliceTricks
+	e.rows = append(e.rows[:row], append([]*Row{ r }, e.rows[row:]...)...)
+	e.n += 1
+	e.reallocBufferIfNeeded()
+
+	prevRowPos := e.crow
+	e.refreshAllRows()
 	e.crow = prevRowPos
 }
 
@@ -514,31 +535,22 @@ func (e *Editor) next() {
 }
 
 func (e *Editor) newLine() {
-	// Update the trailing rows.
-	newLineRowPos := e.crow + e.scroolrow
-	e.crow = e.n
+	// Insert the new row.
+	currentLineRowPos := e.crow + e.scroolrow
+	currentLineRow := e.rows[currentLineRowPos]
 
-	for e.crow+e.scroolrow > newLineRowPos+1 {
-		e.copyRow(e.crow+e.scroolrow, e.crow+e.scroolrow-1)
-		e.crow -= 1
-	}
+	newLineRowPos := e.crow + e.scroolrow + 1
+	// newLineRow := e.rows[newLineRowPos]
 
-	e.n += 1
-	e.reallocBufferIfNeeded()
-
-	newLineRow := e.rows[newLineRowPos+e.scroolrow]
-
-	// Update the next row.
-	nextRowRunes := append([]rune{}, newLineRow.chars.Runes()[e.ccol:]...)
-	e.replaceRune(e.crow+e.scroolrow, nextRowRunes)
+	nextRowRunes := append([]rune{}, currentLineRow.chars.Runes()[e.ccol:]...)
+	e.insertRow(newLineRowPos, nextRowRunes)
 
 	// Update the current row.
-	currentRowNewRunes := append([]rune{}, newLineRow.chars.Runes()[:e.ccol]...)
+	currentRowNewRunes := append([]rune{}, currentLineRow.chars.Runes()[:e.ccol]...)
 	currentRowNewRunes = append(currentRowNewRunes, '\n')
-	e.setRowCol(newLineRowPos, 0)
-	e.replaceRune(e.crow+e.scroolrow, currentRowNewRunes)
+	e.replaceRune(e.crow + e.scroolrow, currentRowNewRunes)
 
-	e.setRowCol(e.crow+1, 0)
+	e.setRowCol(e.crow + 1, 0)
 	e.debugRowRunes()
 }
 
