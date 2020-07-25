@@ -320,6 +320,50 @@ func (e *Editor) refreshAllRows() {
 	e.setRowCol(0, 0)
 }
 
+
+func (e *Editor) setRowPos(row int) {
+	if row < 0 {
+		row = 0
+	}
+
+	if row >= e.n {
+		row = e.n - 1
+	}
+
+	if row >= e.terminal.height {
+		row = e.terminal.height - 1
+	}
+
+	e.crow = row
+	e.moveCursor(e.crow, e.ccol)
+}
+
+func (e *Editor) setColPos(col int) {
+	if col < 0 {
+		col = 0
+	}
+
+	if col >= e.rows[e.crow].visibleLen() {
+		col = e.rows[e.crow].visibleLen()
+	}
+
+	if col >= e.terminal.width {
+		col = e.terminal.width - 1
+	}
+
+	e.ccol = col
+	e.moveCursor(e.crow, e.ccol)
+}
+
+func (e *Editor) setRowCol(row int, col int) {
+	if row > e.n && col > e.rows[e.crow].visibleLen() {
+		return
+	}
+
+	e.setRowPos(row)
+	e.setColPos(col)
+}
+
 // Models
 func (r *Row) deleteAt(col int) {
 	if col >= r.len() {
@@ -392,47 +436,14 @@ func (e *Editor) copyRow(dst int, src int) {
 	e.updateRowRunes(r)
 }
 
-func (e *Editor) setRowPos(row int) {
-	if row < 0 {
-		row = 0
+func (e *Editor) reallocBufferIfNeeded() {
+	if e.n == len(e.rows) {
+		newCap := cap(e.rows) * 2
+		newRows := make([]*Row, newCap)
+		copy(newRows, e.rows)
+		e.rows = newRows
+		e.debugPrint("DEBUG: realloc occurred")
 	}
-
-	if row >= e.n {
-		row = e.n - 1
-	}
-
-	if row >= e.terminal.height {
-		row = e.terminal.height - 1
-	}
-
-	e.crow = row
-	e.moveCursor(e.crow, e.ccol)
-}
-
-func (e *Editor) setColPos(col int) {
-	if col < 0 {
-		col = 0
-	}
-
-	if col >= e.rows[e.crow].visibleLen() {
-		col = e.rows[e.crow].visibleLen()
-	}
-
-	if col >= e.terminal.width {
-		col = e.terminal.width - 1
-	}
-
-	e.ccol = col
-	e.moveCursor(e.crow, e.ccol)
-}
-
-func (e *Editor) setRowCol(row int, col int) {
-	if row > e.n && col > e.rows[e.crow].visibleLen() {
-		return
-	}
-
-	e.setRowPos(row)
-	e.setColPos(col)
 }
 
 func (e *Editor) numberOfRunesInRow() int { return e.rows[e.crow].chars.Len() }
@@ -504,6 +515,8 @@ func (e *Editor) newLine() {
 	}
 
 	e.n += 1
+	e.reallocBufferIfNeeded()
+
 	newLineRow := e.rows[newLineRowPos]
 
 	// Update the next row.
@@ -529,7 +542,7 @@ func saveFile(filePath string, rows []*Row) {
 	sb := strings.Builder{}
 
 	for _, r := range rows {
-		if r != nil && r.len() >= 1 {
+		if r.len() >= 1 {
 			for _, ch := range r.chars.Runes() {
 				sb.WriteRune(ch)
 			}
@@ -703,7 +716,7 @@ func newTerminal(fd int) *Terminal {
 }
 
 func makeRows() []*Row {
-	var rows = make([]*Row, 64) // TODO
+	var rows = make([]*Row, 128)
 	for i := range rows {
 		rows[i] = &Row{
 			chars: NewGapTable(128),
