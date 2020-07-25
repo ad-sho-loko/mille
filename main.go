@@ -730,7 +730,7 @@ func newTerminal(fd int) *Terminal {
 }
 
 func makeRows() []*Row {
-	var rows = make([]*Row, 128)
+	var rows = make([]*Row, 1024) // not good
 	for i := range rows {
 		rows[i] = &Row{
 			chars: NewGapTable(128),
