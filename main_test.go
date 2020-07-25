@@ -26,8 +26,6 @@ func makeAlphaRow() *Row {
 	}
 }
 
-// TODO: Add tests for MultiByte
-
 func TestDeleteAt_Empty(t *testing.T) {
 	row := makeEmptyRow()
 	row.deleteAt(0)

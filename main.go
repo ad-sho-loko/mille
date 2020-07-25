@@ -22,6 +22,7 @@ const (
 	ControlE   = 5
 	ControlF   = 6
 	ControlH   = 8
+	Tab        = 9
 	Enter      = 13
 	ControlN   = 14
 	ControlP   = 16
@@ -364,7 +365,7 @@ func (e *Editor) deleteRow(col int) {
 	e.crow = prevRowPos
 }
 
-func (e *Editor) replaceRune(newRune []rune) {
+func (e *Editor) replaceRune(col int, newRune []rune) {
 	gt := NewGapTable(128)
 
 	for _, r := range newRune {
@@ -375,8 +376,11 @@ func (e *Editor) replaceRune(newRune []rune) {
 		chars: gt,
 	}
 
+	prevRowPos := e.crow
+	e.crow = col
 	e.rows[e.crow] = r
 	e.updateRowRunes(r)
+	e.crow = prevRowPos
 }
 
 func (e *Editor) copyRow(dst int, src int) {
@@ -449,7 +453,7 @@ func (e *Editor) backspace() {
 			// Update the previous row.
 			newRunes := append([]rune{}, prevRow.chars.Runes()[:prevRow.len()-1]...)
 			newRunes = append(newRunes, row.chars.Runes()...)
-			e.replaceRune(newRunes)
+			e.replaceRune(e.crow, newRunes)
 
 			// Update the trailing rows.
 			e.crow += 1
@@ -504,13 +508,13 @@ func (e *Editor) newLine() {
 
 	// Update the next row.
 	nextRowRunes := append([]rune{}, newLineRow.chars.Runes()[e.ccol:]...)
-	e.replaceRune(nextRowRunes)
+	e.replaceRune(e.crow, nextRowRunes)
 
 	// Update the current row.
 	currentRowNewRunes := append([]rune{}, newLineRow.chars.Runes()[:e.ccol]...)
 	currentRowNewRunes = append(currentRowNewRunes, '\n')
 	e.setRowCol(newLineRowPos, 0)
-	e.replaceRune(currentRowNewRunes)
+	e.replaceRune(e.crow, currentRowNewRunes)
 
 	e.setRowCol(e.crow+1, 0)
 	e.debugRowRunes()
@@ -645,6 +649,12 @@ func (e *Editor) interpretKey() {
 		case ControlN, ArrowDown:
 			e.setRowCol(e.crow+1, e.ccol)
 
+		case Tab:
+			for i:=0; i<4; i+=1 {
+				e.insertRune(e.rows[e.crow], e.ccol, rune(' '))
+			}
+			e.setColPos(e.ccol + 4)
+
 		case Enter:
 			e.newLine()
 
@@ -661,6 +671,7 @@ func (e *Editor) interpretKey() {
 			e.debugDetailPrint(e)
 
 		default:
+			e.debugPrint(r)
 			e.insertRune(e.rows[e.crow], e.ccol, r)
 			e.setColPos(e.ccol + 1)
 		}
