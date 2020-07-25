@@ -316,8 +316,10 @@ func (e *Editor) moveCursor(row, col int) {
 }
 
 func (e *Editor) updateRowRunes(row *Row) {
-	e.debugPrint("DEBUG: row updated at", e.crow, "for", row.chars.Runes())
-	e.writeRow(row)
+	if e.crow < e.terminal.height {
+		e.debugPrint("DEBUG: row's view updated at", e.crow + e.scroolrow, "for", row.chars.Runes())
+		e.writeRow(row)
+	}
 }
 
 func (e *Editor) refreshAllRows() {
@@ -325,32 +327,29 @@ func (e *Editor) refreshAllRows() {
 		e.crow = i
 		e.writeRow(e.rows[e.scroolrow + i])
 	}
-
-	e.setRowCol(0, 0)
 }
 
 
 func (e *Editor) setRowPos(row int) {
+	if row >= e.n { row = e.n - 1 }
+
 	if row < 0 {
 		if e.scroolrow > 0 {
 			e.scroolrow -= 1
 			e.refreshAllRows()
 		}
+
 		row = 0
 	}
 
-	if row >= e.n {
-		row = e.n - 1
-	}
-
 	if row >= e.terminal.height {
-		e.scroolrow += 1
+		if row + e.scroolrow <= e.n { e.scroolrow += 1 }
 		row = e.terminal.height - 1
 		e.refreshAllRows()
 	}
 
 	e.crow = row
-	e.moveCursor(e.crow, e.ccol)
+	e.moveCursor(row, e.ccol)
 }
 
 func (e *Editor) setColPos(col int) {
@@ -358,8 +357,8 @@ func (e *Editor) setColPos(col int) {
 		col = 0
 	}
 
-	if col >= e.rows[e.crow].visibleLen() {
-		col = e.rows[e.crow].visibleLen()
+	if col >= e.currentRow().visibleLen() {
+		col = e.currentRow().visibleLen()
 	}
 
 	if col >= e.terminal.width {
@@ -371,7 +370,7 @@ func (e *Editor) setColPos(col int) {
 }
 
 func (e *Editor) setRowCol(row int, col int) {
-	if row > e.n && col > e.rows[e.crow].visibleLen() {
+	if row > e.n && col > e.currentRow().visibleLen() {
 		return
 	}
 
@@ -399,6 +398,14 @@ func (r *Row) insertAt(colPos int, newRune rune) {
 func (r *Row) len() int        { return r.chars.Len() }
 func (r *Row) visibleLen() int { return r.chars.VisibleLen() }
 
+func (e *Editor) currentRow() *Row {
+	return e.rows[e.crow + e.scroolrow]
+}
+
+func (e *Editor) setCurrentRow(row *Row) {
+	e.rows[e.crow + e.scroolrow] = row
+}
+
 func (e *Editor) deleteRune(row *Row, col int) {
 	row.deleteAt(col)
 	e.updateRowRunes(row)
@@ -416,7 +423,7 @@ func (e *Editor) deleteRow(row int) {
 		chars: gt,
 	}
 
-	e.rows[row] = r
+	e.setCurrentRow(r)
 
 	prevRowPos := e.crow
 	e.crow = row
@@ -424,7 +431,7 @@ func (e *Editor) deleteRow(row int) {
 	e.crow = prevRowPos
 }
 
-func (e *Editor) replaceRune(col int, newRune []rune) {
+func (e *Editor) replaceRune(row int, newRune []rune) {
 	gt := NewGapTable(128)
 
 	for _, r := range newRune {
@@ -436,8 +443,8 @@ func (e *Editor) replaceRune(col int, newRune []rune) {
 	}
 
 	prevRowPos := e.crow
-	e.crow = col
-	e.rows[e.crow] = r
+	e.crow = row
+	e.setCurrentRow(r)
 	e.updateRowRunes(r)
 	e.crow = prevRowPos
 }
@@ -461,17 +468,17 @@ func (e *Editor) reallocBufferIfNeeded() {
 	}
 }
 
-func (e *Editor) numberOfRunesInRow() int { return e.rows[e.crow].chars.Len() }
+func (e *Editor) numberOfRunesInRow() int { return e.currentRow().chars.Len() }
 
 func (e *Editor) backspace() {
-	row := e.rows[e.crow]
+	row := e.currentRow()
 
 	if e.ccol == 0 {
 		if e.crow > 0 {
 			e.n -= 1
 			e.crow -= 1
 
-			prevRow := e.rows[e.crow]
+			prevRow := e.currentRow()
 
 			restoreRowPos := e.crow
 			restoreColPos := prevRow.len() - 1
@@ -479,12 +486,12 @@ func (e *Editor) backspace() {
 			// Update the previous row.
 			newRunes := append([]rune{}, prevRow.chars.Runes()[:prevRow.len()-1]...)
 			newRunes = append(newRunes, row.chars.Runes()...)
-			e.replaceRune(e.crow, newRunes)
+			e.replaceRune(e.crow + e.scroolrow, newRunes)
 
 			// Update the trailing rows.
 			e.crow += 1
 			for e.crow < e.n {
-				e.copyRow(e.crow, e.crow+1)
+				e.copyRow(e.crow + e.scroolrow, e.crow + e.scroolrow +1)
 				e.crow += 1
 			}
 
@@ -502,7 +509,7 @@ func (e *Editor) backspace() {
 func (e *Editor) back() {
 	if e.ccol == 0 {
 		if e.crow > 0 {
-			e.setRowCol(e.crow - 1, e.rows[e.crow - 1].visibleLen())
+			e.setRowCol(e.crow - 1, e.rows[e.crow + e.scroolrow - 1].visibleLen())
 		}
 	} else {
 		e.setRowCol(e.crow, e.ccol-1)
@@ -510,9 +517,9 @@ func (e *Editor) back() {
 }
 
 func (e *Editor) next() {
-	if e.ccol >= e.rows[e.crow].visibleLen() {
-		if e.crow+1 < e.n {
-			e.setRowCol(e.crow, 0)
+	if e.ccol >= e.currentRow().visibleLen() {
+		if e.crow + 1 < e.n {
+			e.setRowCol(e.crow + 1, 0)
 		}
 	} else {
 		e.setRowCol(e.crow, e.ccol+1)
@@ -521,28 +528,28 @@ func (e *Editor) next() {
 
 func (e *Editor) newLine() {
 	// Update the trailing rows.
-	newLineRowPos := e.crow
+	newLineRowPos := e.crow + e.scroolrow
 	e.crow = e.n
 
-	for e.crow > newLineRowPos+1 {
-		e.copyRow(e.crow, e.crow-1)
+	for e.crow + e.scroolrow > newLineRowPos+1 {
+		e.copyRow(e.crow + e.scroolrow, e.crow + e.scroolrow - 1)
 		e.crow -= 1
 	}
 
 	e.n += 1
 	e.reallocBufferIfNeeded()
 
-	newLineRow := e.rows[newLineRowPos]
+	newLineRow := e.rows[newLineRowPos + e.scroolrow]
 
 	// Update the next row.
 	nextRowRunes := append([]rune{}, newLineRow.chars.Runes()[e.ccol:]...)
-	e.replaceRune(e.crow, nextRowRunes)
+	e.replaceRune(e.crow + e.scroolrow, nextRowRunes)
 
 	// Update the current row.
 	currentRowNewRunes := append([]rune{}, newLineRow.chars.Runes()[:e.ccol]...)
 	currentRowNewRunes = append(currentRowNewRunes, '\n')
 	e.setRowCol(newLineRowPos, 0)
-	e.replaceRune(e.crow, currentRowNewRunes)
+	e.replaceRune(e.crow + e.scroolrow, currentRowNewRunes)
 
 	e.setRowCol(e.crow+1, 0)
 	e.debugRowRunes()
@@ -680,7 +687,7 @@ func (e *Editor) interpretKey() {
 
 		case Tab:
 			for i:=0; i<4; i+=1 {
-				e.insertRune(e.rows[e.crow], e.ccol, rune(' '))
+				e.insertRune(e.currentRow(), e.ccol, rune(' '))
 			}
 			e.setColPos(e.ccol + 4)
 
@@ -697,11 +704,11 @@ func (e *Editor) interpretKey() {
 
 		// for debug
 		case ControlV:
+			e.debugPrint("crow:", e.crow, "ccol:", e.ccol, "scrollrow:", e.scroolrow)
 			e.debugDetailPrint(e)
 
 		default:
-			e.debugPrint(r)
-			e.insertRune(e.rows[e.crow], e.ccol, r)
+			e.insertRune(e.currentRow(), e.ccol, r)
 			e.setColPos(e.ccol + 1)
 		}
 	}
@@ -770,6 +777,7 @@ func run(filePath string, debug bool) {
 	e := newEditor(filePath, debug)
 	e.initTerminal()
 	e.refreshAllRows()
+	e.setRowCol(0, 0)
 
 	go e.readKeys()
 	go e.pollTimerEvent()
