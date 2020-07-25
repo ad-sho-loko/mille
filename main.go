@@ -111,16 +111,16 @@ var keywordColor = map[Keyword]color{
 }
 
 type Editor struct {
-	filePath string
-	keyChan  chan rune
-	timeChan chan messageType
-	crow     int
-	ccol     int
-	scroolrow  int
-	rows     []*Row
-	terminal *Terminal
-	n        int  // numberOfRows
-	debug    bool // for debug
+	filePath  string
+	keyChan   chan rune
+	timeChan  chan messageType
+	crow      int
+	ccol      int
+	scroolrow int
+	rows      []*Row
+	terminal  *Terminal
+	n         int  // numberOfRows
+	debug     bool // for debug
 }
 
 type Terminal struct {
@@ -270,7 +270,9 @@ func (e *Editor) highlight(b []byte) []color {
 	isStringLit := false
 	for i, b := range ascii {
 		if b == '"' || isStringLit {
-			if b == '"' { isStringLit = !isStringLit }
+			if b == '"' {
+				isStringLit = !isStringLit
+			}
 			colors[i] = FgGreen
 		}
 	}
@@ -325,13 +327,14 @@ func (e *Editor) updateRowRunes(row *Row) {
 func (e *Editor) refreshAllRows() {
 	for i := 0; i < e.terminal.height; i += 1 {
 		e.crow = i
-		e.writeRow(e.rows[e.scroolrow + i])
+		e.writeRow(e.rows[e.scroolrow+i])
 	}
 }
 
-
 func (e *Editor) setRowPos(row int) {
-	if row >= e.n { row = e.n - 1 }
+	if row >= e.n {
+		row = e.n - 1
+	}
 
 	if row < 0 {
 		if e.scroolrow > 0 {
@@ -343,7 +346,9 @@ func (e *Editor) setRowPos(row int) {
 	}
 
 	if row >= e.terminal.height {
-		if row + e.scroolrow <= e.n { e.scroolrow += 1 }
+		if row+e.scroolrow <= e.n {
+			e.scroolrow += 1
+		}
 		row = e.terminal.height - 1
 		e.refreshAllRows()
 	}
@@ -402,14 +407,10 @@ func (e *Editor) currentRow() *Row {
 	return e.rows[e.crow + e.scroolrow]
 }
 
-func (e *Editor) setCurrentRow(row *Row) {
-	e.rows[e.crow + e.scroolrow] = row
-}
-
 func (e *Editor) deleteRune(row *Row, col int) {
 	row.deleteAt(col)
 	e.updateRowRunes(row)
-	e.setRowCol(e.crow, e.ccol-1)
+	e.setRowCol(e.crow, e.ccol - 1)
 }
 
 func (e *Editor) insertRune(row *Row, col int, newRune rune) {
@@ -418,16 +419,11 @@ func (e *Editor) insertRune(row *Row, col int, newRune rune) {
 }
 
 func (e *Editor) deleteRow(row int) {
-	gt := NewGapTable(128)
-	r := &Row{
-		chars: gt,
-	}
-
-	e.setCurrentRow(r)
+	e.rows = append(e.rows[:row], e.rows[row+1:]...)
+	e.n -= 1
 
 	prevRowPos := e.crow
-	e.crow = row
-	e.updateRowRunes(r)
+	e.refreshAllRows()
 	e.crow = prevRowPos
 }
 
@@ -442,9 +438,10 @@ func (e *Editor) replaceRune(row int, newRune []rune) {
 		chars: gt,
 	}
 
+	e.rows[row] = r
+
 	prevRowPos := e.crow
-	e.crow = row
-	e.setCurrentRow(r)
+	e.crow = row - e.scroolrow
 	e.updateRowRunes(r)
 	e.crow = prevRowPos
 }
@@ -453,9 +450,12 @@ func (e *Editor) copyRow(dst int, src int) {
 	r := &Row{
 		chars: e.rows[src].chars,
 	}
-
 	e.rows[dst] = r
+
+	prevRowPos := e.crow
+	e.crow = dst
 	e.updateRowRunes(r)
+	e.crow = prevRowPos
 }
 
 func (e *Editor) reallocBufferIfNeeded() {
@@ -474,33 +474,20 @@ func (e *Editor) backspace() {
 	row := e.currentRow()
 
 	if e.ccol == 0 {
-		if e.crow > 0 {
-			e.n -= 1
-			e.crow -= 1
-
-			prevRow := e.currentRow()
-
-			restoreRowPos := e.crow
-			restoreColPos := prevRow.len() - 1
+		if e.crow + e.scroolrow > 0 {
+			prevRow := e.rows[e.crow + e.scroolrow - 1]
 
 			// Update the previous row.
 			newRunes := append([]rune{}, prevRow.chars.Runes()[:prevRow.len()-1]...)
 			newRunes = append(newRunes, row.chars.Runes()...)
-			e.replaceRune(e.crow + e.scroolrow, newRunes)
+			e.replaceRune(e.crow + e.scroolrow - 1, newRunes)
 
-			// Update the trailing rows.
-			e.crow += 1
-			for e.crow < e.n {
-				e.copyRow(e.crow + e.scroolrow, e.crow + e.scroolrow +1)
-				e.crow += 1
-			}
-
-			// Delete the last row
-			e.deleteRow(e.n)
-			e.setRowCol(restoreRowPos, restoreColPos)
+			// Delete the current row
+			e.deleteRow(e.crow + e.scroolrow)
+			e.setRowCol(e.crow - 1, prevRow.len() - 1)
 		}
 	} else {
-		e.deleteRune(row, e.ccol-1)
+		e.deleteRune(row, e.ccol - 1)
 	}
 
 	e.debugRowRunes()
@@ -509,7 +496,7 @@ func (e *Editor) backspace() {
 func (e *Editor) back() {
 	if e.ccol == 0 {
 		if e.crow > 0 {
-			e.setRowCol(e.crow - 1, e.rows[e.crow + e.scroolrow - 1].visibleLen())
+			e.setRowCol(e.crow-1, e.rows[e.crow+e.scroolrow-1].visibleLen())
 		}
 	} else {
 		e.setRowCol(e.crow, e.ccol-1)
@@ -518,8 +505,8 @@ func (e *Editor) back() {
 
 func (e *Editor) next() {
 	if e.ccol >= e.currentRow().visibleLen() {
-		if e.crow + 1 < e.n {
-			e.setRowCol(e.crow + 1, 0)
+		if e.crow+1 < e.n {
+			e.setRowCol(e.crow+1, 0)
 		}
 	} else {
 		e.setRowCol(e.crow, e.ccol+1)
@@ -531,25 +518,25 @@ func (e *Editor) newLine() {
 	newLineRowPos := e.crow + e.scroolrow
 	e.crow = e.n
 
-	for e.crow + e.scroolrow > newLineRowPos+1 {
-		e.copyRow(e.crow + e.scroolrow, e.crow + e.scroolrow - 1)
+	for e.crow+e.scroolrow > newLineRowPos+1 {
+		e.copyRow(e.crow+e.scroolrow, e.crow+e.scroolrow-1)
 		e.crow -= 1
 	}
 
 	e.n += 1
 	e.reallocBufferIfNeeded()
 
-	newLineRow := e.rows[newLineRowPos + e.scroolrow]
+	newLineRow := e.rows[newLineRowPos+e.scroolrow]
 
 	// Update the next row.
 	nextRowRunes := append([]rune{}, newLineRow.chars.Runes()[e.ccol:]...)
-	e.replaceRune(e.crow + e.scroolrow, nextRowRunes)
+	e.replaceRune(e.crow+e.scroolrow, nextRowRunes)
 
 	// Update the current row.
 	currentRowNewRunes := append([]rune{}, newLineRow.chars.Runes()[:e.ccol]...)
 	currentRowNewRunes = append(currentRowNewRunes, '\n')
 	e.setRowCol(newLineRowPos, 0)
-	e.replaceRune(e.crow + e.scroolrow, currentRowNewRunes)
+	e.replaceRune(e.crow+e.scroolrow, currentRowNewRunes)
 
 	e.setRowCol(e.crow+1, 0)
 	e.debugRowRunes()
@@ -576,13 +563,13 @@ func saveFile(filePath string, rows []*Row) {
 
 func loadFile(filePath string) *Editor {
 	e := &Editor{
-		crow:     0,
-		ccol:     0,
+		crow:      0,
+		ccol:      0,
 		scroolrow: 0,
-		filePath: filePath,
-		keyChan:  make(chan rune),
-		timeChan: make(chan messageType),
-		n:        1,
+		filePath:  filePath,
+		keyChan:   make(chan rune),
+		timeChan:  make(chan messageType),
+		n:         1,
 	}
 
 	rows := makeRows()
@@ -599,13 +586,13 @@ func loadFile(filePath string) *Editor {
 		gt.AppendRune(rune(b))
 
 		if b == '\n' {
-			rows[e.n - 1] = &Row { chars: gt }
+			rows[e.n-1] = &Row{chars: gt}
 			e.n += 1
 			gt = NewGapTable(128)
 		}
 	}
 
-	rows[e.n - 1] = &Row{ chars: gt }
+	rows[e.n-1] = &Row{chars: gt}
 	e.rows = rows
 
 	return e
@@ -683,10 +670,10 @@ func (e *Editor) interpretKey() {
 			e.backspace()
 
 		case ControlN, ArrowDown:
-			e.setRowCol(e.crow + 1, e.ccol)
+			e.setRowCol(e.crow+1, e.ccol)
 
 		case Tab:
-			for i:=0; i<4; i+=1 {
+			for i := 0; i < 4; i += 1 {
 				e.insertRune(e.currentRow(), e.ccol, rune(' '))
 			}
 			e.setColPos(e.ccol + 4)
@@ -700,11 +687,10 @@ func (e *Editor) interpretKey() {
 			e.timeChan <- resetMessage
 
 		case ControlP, ArrowUp:
-			e.setRowCol(e.crow - 1, e.ccol)
+			e.setRowCol(e.crow-1, e.ccol)
 
 		// for debug
 		case ControlV:
-			e.debugPrint("crow:", e.crow, "ccol:", e.ccol, "scrollrow:", e.scroolrow)
 			e.debugDetailPrint(e)
 
 		default:
@@ -760,16 +746,16 @@ func newEditor(filePath string, debug bool) *Editor {
 
 	rows := makeRows()
 	return &Editor{
-		crow:     0,
-		ccol:     0,
+		crow:      0,
+		ccol:      0,
 		scroolrow: 0,
-		rows:     rows,
-		filePath: filePath,
-		keyChan:  make(chan rune),
-		timeChan: make(chan messageType),
-		terminal: terminal,
-		n:        1,
-		debug:    debug,
+		rows:      rows,
+		filePath:  filePath,
+		keyChan:   make(chan rune),
+		timeChan:  make(chan messageType),
+		terminal:  terminal,
+		n:         1,
+		debug:     debug,
 	}
 }
 
