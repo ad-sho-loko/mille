@@ -116,6 +116,7 @@ type Editor struct {
 	timeChan chan messageType
 	crow     int
 	ccol     int
+	scroolrow  int
 	rows     []*Row
 	terminal *Terminal
 	n        int  // numberOfRows
@@ -320,9 +321,9 @@ func (e *Editor) updateRowRunes(row *Row) {
 }
 
 func (e *Editor) refreshAllRows() {
-	for i := 0; i < e.n; i += 1 {
+	for i := 0; i < e.terminal.height; i += 1 {
 		e.crow = i
-		e.writeRow(e.rows[i])
+		e.writeRow(e.rows[e.scroolrow + i])
 	}
 
 	e.setRowCol(0, 0)
@@ -331,6 +332,10 @@ func (e *Editor) refreshAllRows() {
 
 func (e *Editor) setRowPos(row int) {
 	if row < 0 {
+		if e.scroolrow > 0 {
+			e.scroolrow -= 1
+			e.refreshAllRows()
+		}
 		row = 0
 	}
 
@@ -339,7 +344,9 @@ func (e *Editor) setRowPos(row int) {
 	}
 
 	if row >= e.terminal.height {
+		e.scroolrow += 1
 		row = e.terminal.height - 1
+		e.refreshAllRows()
 	}
 
 	e.crow = row
@@ -403,16 +410,16 @@ func (e *Editor) insertRune(row *Row, col int, newRune rune) {
 	e.updateRowRunes(row)
 }
 
-func (e *Editor) deleteRow(col int) {
+func (e *Editor) deleteRow(row int) {
 	gt := NewGapTable(128)
 	r := &Row{
 		chars: gt,
 	}
 
-	e.rows[col] = r
+	e.rows[row] = r
 
 	prevRowPos := e.crow
-	e.crow = col
+	e.crow = row
 	e.updateRowRunes(r)
 	e.crow = prevRowPos
 }
@@ -495,7 +502,7 @@ func (e *Editor) backspace() {
 func (e *Editor) back() {
 	if e.ccol == 0 {
 		if e.crow > 0 {
-			e.setRowCol(e.crow-1, e.rows[e.crow-1].visibleLen())
+			e.setRowCol(e.crow - 1, e.rows[e.crow - 1].visibleLen())
 		}
 	} else {
 		e.setRowCol(e.crow, e.ccol-1)
@@ -505,7 +512,7 @@ func (e *Editor) back() {
 func (e *Editor) next() {
 	if e.ccol >= e.rows[e.crow].visibleLen() {
 		if e.crow+1 < e.n {
-			e.setRowCol(e.crow+1, 0)
+			e.setRowCol(e.crow, 0)
 		}
 	} else {
 		e.setRowCol(e.crow, e.ccol+1)
@@ -564,6 +571,7 @@ func loadFile(filePath string) *Editor {
 	e := &Editor{
 		crow:     0,
 		ccol:     0,
+		scroolrow: 0,
 		filePath: filePath,
 		keyChan:  make(chan rune),
 		timeChan: make(chan messageType),
@@ -668,7 +676,7 @@ func (e *Editor) interpretKey() {
 			e.backspace()
 
 		case ControlN, ArrowDown:
-			e.setRowCol(e.crow+1, e.ccol)
+			e.setRowCol(e.crow + 1, e.ccol)
 
 		case Tab:
 			for i:=0; i<4; i+=1 {
@@ -685,7 +693,7 @@ func (e *Editor) interpretKey() {
 			e.timeChan <- resetMessage
 
 		case ControlP, ArrowUp:
-			e.setRowCol(e.crow-1, e.ccol)
+			e.setRowCol(e.crow - 1, e.ccol)
 
 		// for debug
 		case ControlV:
@@ -747,6 +755,7 @@ func newEditor(filePath string, debug bool) *Editor {
 	return &Editor{
 		crow:     0,
 		ccol:     0,
+		scroolrow: 0,
 		rows:     rows,
 		filePath: filePath,
 		keyChan:  make(chan rune),
