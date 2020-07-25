@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"golang.org/x/sys/unix"
@@ -137,6 +136,12 @@ type Row struct {
 func (e *Editor) debugPrint(a ...interface{}) {
 	if e.debug {
 		_, _ = fmt.Fprintln(os.Stderr, a...)
+	}
+}
+
+func (e *Editor) debugDetailPrint(a ...interface{}) {
+	if e.debug {
+		_, _ = fmt.Fprintf(os.Stderr, "%+v\n", a...)
 	}
 }
 
@@ -526,6 +531,7 @@ func saveFile(filePath string, rows []*Row) {
 			}
 		}
 	}
+
 	_ = ioutil.WriteFile(filePath, []byte(sb.String()), 0644)
 }
 
@@ -536,36 +542,32 @@ func loadFile(filePath string) *Editor {
 		filePath: filePath,
 		keyChan:  make(chan rune),
 		timeChan: make(chan messageType),
-		n:        0,
+		n:        1,
 	}
 
 	rows := makeRows()
-	f, err := os.Open(filePath)
+
+	bytes, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		panic(err)
 	}
 
-	defer f.Close()
+	gt := NewGapTable(128)
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		gt := NewGapTable(128)
+	for _, b := range bytes {
+		// ASCII-only
+		gt.AppendRune(rune(b))
 
-		line := scanner.Text()
-		for _, s := range line {
-			gt.AppendRune(s)
+		if b == '\n' {
+			rows[e.n - 1] = &Row { chars: gt }
+			e.n += 1
+			gt = NewGapTable(128)
 		}
-		gt.AppendRune('\n')
-
-		rows[e.n] = &Row{chars: gt}
-		e.n += 1
 	}
 
-	if err := scanner.Err(); err != nil {
-		panic(err)
-	}
-
+	rows[e.n - 1] = &Row{ chars: gt }
 	e.rows = rows
+
 	return e
 }
 
@@ -656,7 +658,7 @@ func (e *Editor) interpretKey() {
 
 		// for debug
 		case ControlV:
-			e.flushRow()
+			e.debugDetailPrint(e)
 
 		default:
 			e.insertRune(e.rows[e.crow], e.ccol, r)
@@ -699,13 +701,14 @@ func makeRows() []*Row {
 	return rows
 }
 
-func newEditor(filePath string, debug bool) (*Editor, bool) {
+func newEditor(filePath string, debug bool) *Editor {
 	terminal := newTerminal(0)
 
 	if existsFile(filePath) {
 		e := loadFile(filePath)
+		e.debug = debug
 		e.terminal = terminal
-		return e, true
+		return e
 	}
 
 	rows := makeRows()
@@ -719,16 +722,13 @@ func newEditor(filePath string, debug bool) (*Editor, bool) {
 		terminal: terminal,
 		n:        1,
 		debug:    debug,
-	}, false
+	}
 }
 
 func run(filePath string, debug bool) {
-	e, needRefresh := newEditor(filePath, debug)
+	e := newEditor(filePath, debug)
 	e.initTerminal()
-
-	if needRefresh {
-		e.refreshAllRows()
-	}
+	e.refreshAllRows()
 
 	go e.readKeys()
 	go e.pollTimerEvent()

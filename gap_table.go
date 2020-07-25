@@ -124,17 +124,3 @@ func (g *GapTable) RunesString() string {
 	runes := append(g.array[:g.startPieceIndex], g.array[g.endPieceIndex+1:]...)
 	return string(runes)
 }
-
-func (g *GapTable) VisibleRunes() []rune {
-	runes := g.Runes()
-	var visibleRunes []rune
-
-	for _, r := range runes {
-		if r == 0x0a {
-			continue
-		}
-		visibleRunes = append(visibleRunes, r)
-	}
-
-	return visibleRunes
-}
