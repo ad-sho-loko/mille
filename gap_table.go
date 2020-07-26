@@ -114,7 +114,9 @@ func (g *GapTable) DeleteAt(index int) {
 		g.invisibleRuneCount -= 1
 	}
 
-	if index < g.startPieceIndex {
+	if index == g.startPieceIndex - 1 {
+		g.startPieceIndex -= 1
+	} else if index < g.startPieceIndex {
 		copyTarget := g.array[index:g.startPieceIndex]
 		n := copy(g.array[g.endPieceIndex-len(copyTarget)+1:g.endPieceIndex+1], copyTarget)
 		g.startPieceIndex -= n

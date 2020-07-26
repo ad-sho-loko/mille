@@ -5,7 +5,7 @@ It aims to be simple, readable codes.
 
 < TODO: GIF >
 
-## Installation
+## Install
 
 ```
 go get github.com/ad-sho-loko/mille

@@ -149,13 +149,13 @@ func TestGapTable_DeleteAt_Gap(t *testing.T) {
 	assert.Equal(t, 1, g.Len())
 	assert.Equal(t, 0, g.startPieceIndex)
 	assert.Equal(t, 2, g.endPieceIndex)
-	assert.Equal(t, []rune{r(98), r(0), r(98), r(97)}, g.array)
+	assert.Equal(t, []rune{r(98), r(0), r(0), r(97)}, g.array)
 
 	g.DeleteAt(0)
 	assert.Equal(t, 0, g.Len())
 	assert.Equal(t, 0, g.startPieceIndex)
 	assert.Equal(t, 3, g.endPieceIndex)
-	assert.Equal(t, []rune{r(97), r(0), r(98), r(97)}, g.array)
+	assert.Equal(t, []rune{r(97), r(0), r(0), r(97)}, g.array)
 }
 
 func TestGapTable_DeleteAt_NoGap(t *testing.T) {
@@ -168,17 +168,18 @@ func TestGapTable_DeleteAt_NoGap(t *testing.T) {
 	assert.Equal(t, 2, g.Len())
 	assert.Equal(t, 2, g.startPieceIndex)
 	assert.Equal(t, 3, g.endPieceIndex)
-	assert.Equal(t, []rune{r(97), r(98), r(99), r(99)}, g.array)
+	assert.Equal(t, []rune{r(97), r(98), r(99), r(0)}, g.array)
 
 	g.DeleteAt(1)
 	assert.Equal(t, 1, g.Len())
 	assert.Equal(t, 1, g.startPieceIndex)
 	assert.Equal(t, 3, g.endPieceIndex)
-	assert.Equal(t, []rune{r(97), r(98), r(99), r(98)}, g.array)
+	assert.Equal(t, []rune{r(97), r(98), r(99), r(0)}, g.array)
 
 	g.DeleteAt(0)
 	assert.Equal(t, 0, g.Len())
 	assert.Equal(t, 0, g.startPieceIndex)
 	assert.Equal(t, 3, g.endPieceIndex)
-	assert.Equal(t, []rune{r(97), r(98), r(99), r(97)}, g.array)
+	assert.Equal(t, []rune{r(97), r(98), r(99), r(0)}, g.array)
 }
+

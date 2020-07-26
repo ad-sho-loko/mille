@@ -135,6 +135,7 @@ type Terminal struct {
 
 type Row struct {
 	chars *GapTable
+	// render
 }
 
 func (e *Editor) debugPrint(a ...interface{}) {
@@ -489,7 +490,6 @@ func (e *Editor) backspace() {
 	if e.ccol == 0 {
 		if e.crow + e.scroolrow > 0 {
 			prevRowPos := e.crow + e.scroolrow - 1
-			currentRowPos := e.crow + e.scroolrow
 			prevRow := e.rows[prevRowPos]
 
 			// Update the previous row.
@@ -498,6 +498,7 @@ func (e *Editor) backspace() {
 			e.replaceRune(prevRowPos, newRunes)
 
 			// Delete the current row
+			currentRowPos := e.crow + e.scroolrow
 			e.deleteRow(currentRowPos)
 			e.setRowCol(e.crow - 1, prevRow.len() - 1)
 		}
