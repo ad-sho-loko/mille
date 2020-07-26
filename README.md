@@ -3,7 +3,7 @@
 mille is a toy text editor in less than 1K lines of code.
 It aims to be simple, readable codes.
 
-< TODO: GIF >
+![demo](https://github.com/ad-sho-loko/mille/blob/master/img/demo.gif)
 
 ## Install
 
