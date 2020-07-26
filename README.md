@@ -8,13 +8,13 @@ It aims to be simple, readable codes.
 ## Install
 
 ```
-go get github.com/ad-sho-loko/mille
+go get -u github.com/ad-sho-loko/mille
 ```
 
 ## Usage
 
 ```
-./mille <filename>
+mille <filename>
 ```
 
 ## Keys
@@ -29,10 +29,7 @@ go get github.com/ad-sho-loko/mille
 |  `Ctrl-N`  |  Down |
 |  `Ctrl-B`  |  Left |
 |  `Ctrl-S`  |  Save |
-
-## Blog(Japanese)
-
-< TODO: Blog Post URL>
+|  `Ctrl-C`  |  Close |
 
 ## LICENSE
 
