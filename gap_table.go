@@ -49,24 +49,40 @@ func (g *GapTable) AppendRune(r rune) {
 	g.InsertAt(g.Len(), r)
 }
 
+// See gap_table_test.go how it works.
 func (g *GapTable) InsertAt(index int, r rune) {
 	if r == 0x0a {
 		g.invisibleRuneCount += 1
 	}
 
 	if index == g.startPieceIndex {
+		// Insert E at #
+		// before: [A, B, C, #, x, x, D]
+		// after:  [A, B, C, E, x, x, D]
+		// O(1) if not reallocating the array
 		g.array[g.startPieceIndex] = r
 		g.startPieceIndex += 1
 	} else if index > g.startPieceIndex {
 		if index >= g.Len() {
-			// Insert E at #
-			// before: [A, B, C, x, D] #
-			// after:  [A, B, C, x, D, E]
+			// e.g.) Insert F at #
+			// before: [A, B, C, x, x, D, E] #
+			//                   ^  ^
+			//                   s  e
+			// after:  [A, B, C, x, x, D, E, F]
+			//                   ^  ^
+			//                   s  e
 			copyTarget := g.array[g.endPieceIndex+1 : g.Cap()]
 			_ = copy(g.array[g.endPieceIndex:g.Cap()-1], copyTarget)
-			g.array[g.Cap()-1] = r
+			g.array[g.Cap() - 1] = r
 			g.endPieceIndex -= 1
 		} else {
+			// e.g.) Insert G at #
+			// before: [A, B, C, x, x, x, D, #, E, F]
+			//                   ^     ^
+			//                   s     e
+			// after:  [A, B, C, D, x, x, D, G, E, F]
+			//                      ^     ^
+			//                      s     e
 			copyTarget := g.array[g.endPieceIndex+1 : index+g.endPieceIndex-g.startPieceIndex+2]
 			n := copy(g.array[g.startPieceIndex:g.startPieceIndex+len(copyTarget)], copyTarget)
 			g.SetAt(index, r)
@@ -74,6 +90,13 @@ func (g *GapTable) InsertAt(index int, r rune) {
 			g.endPieceIndex += n - 1
 		}
 	} else {
+		// e.g.) Insert G at #
+		// before: [A, B, #, C, x, x, x, D, E, F]
+		//                      ^     ^
+		//                      s     e
+		// after:  [A, B, G, x, x, x, C, D, E, F]
+		//                   ^     ^
+		//                   s     e
 		copyTarget := g.array[index:g.startPieceIndex]
 		n := copy(g.array[g.endPieceIndex-len(copyTarget)+1:g.endPieceIndex+1], copyTarget)
 		g.array[index] = r
