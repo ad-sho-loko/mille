@@ -1,11 +1,31 @@
 ## mille 
 
-mille is a toy text editor in less than 1K lines of code.
-It aims to be simple, readable codes.
+mille is a toy text editor in less than 1K lines of code (not including test codes).
+
+This project is inspired by [https://github.com/antirez/kilo](kilo). 
+It also aims to be simple, readable codes. 
+
+Moreover, mille doesn't depend on any external library. 
 
 ![demo](https://github.com/ad-sho-loko/mille/blob/master/img/demo.gif)
 
+## Features
+
+- Less 1K code bases
+- No External Libraries. 
+- Implement Gap Buffer
+
+## Editor Features 
+
+- Open file
+- Create file
+- Save fil
+- Edit file
+- Go syntax highlighting
+
 ## Install
+
+If you already installed go, Please type below in your terminal.
 
 ```
 go get -u github.com/ad-sho-loko/mille
@@ -13,11 +33,13 @@ go get -u github.com/ad-sho-loko/mille
 
 ## Usage
 
+### Run 
+
 ```
 mille <filename>
 ```
 
-## Keys
+### Keys
 
 |  Key  |  Description  |
 | ---- | ---- |
@@ -30,6 +52,16 @@ mille <filename>
 |  `Ctrl-B`  |  Left |
 |  `Ctrl-S`  |  Save |
 |  `Ctrl-C`  |  Close |
+
+## Feature works
+
+- UTF8 
+- Search/Replace
+- Copy/Paste
+- Undo/Redo
+
+## Author
+Shogo Arakawa (ad.sho.loko@gmail.com)
 
 ## LICENSE
 

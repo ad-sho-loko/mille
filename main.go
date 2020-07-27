@@ -780,7 +780,7 @@ func main() {
 	flag.Parse()
 
 	if flag.NArg() < 1 || flag.NArg() > 3 {
-		fmt.Println("Usage: ./mille <filename> [--debug]")
+		fmt.Println("Usage: mille <filename> [--debug]")
 		return
 	}
 
