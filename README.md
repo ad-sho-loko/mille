@@ -1,10 +1,8 @@
 ## mille 
 
-mille is a toy text editor in less than 1K lines of code (not including test codes).
-
+mille is a toy text editor in less than 1K lines of code (not including test codes). 
+It aims to be simple, readable codes, but works great.
 This project is inspired by [https://github.com/antirez/kilo](kilo). 
-It also aims to be simple, readable codes. 
-
 Moreover, mille doesn't depend on any external library. 
 
 ![demo](https://github.com/ad-sho-loko/mille/blob/master/img/demo.gif)
@@ -19,7 +17,7 @@ Moreover, mille doesn't depend on any external library.
 
 - Open file
 - Create file
-- Save fil
+- Save file
 - Edit file
 - Go syntax highlighting
 
