@@ -588,6 +588,15 @@ func loadFile(filePath string) *Editor {
 	gt := NewGapTable(128)
 
 	for _, b := range bytes {
+		// Treat TAB as 4 spaces.
+		if b == Tab {
+			gt.AppendRune(rune(0x20))
+			gt.AppendRune(rune(0x20))
+			gt.AppendRune(rune(0x20))
+			gt.AppendRune(rune(0x20))
+			continue
+		}
+
 		// ASCII-only
 		gt.AppendRune(rune(b))
 

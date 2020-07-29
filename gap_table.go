@@ -51,7 +51,7 @@ func (g *GapTable) AppendRune(r rune) {
 
 // See gap_table_test.go how it works.
 func (g *GapTable) InsertAt(index int, r rune) {
-	if r == 0x0a {
+	if r == '\n' {
 		g.invisibleRuneCount += 1
 	}
 
